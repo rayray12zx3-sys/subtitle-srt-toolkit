@@ -14,7 +14,7 @@ on:
         description: 'Locally executed open-source Whisper weights'
         type: choice
         required: true
-        default: small
+        default: large-v3-turbo
         options:
           - small
           - tiny

@@ -14,7 +14,7 @@ on:
         description: "Qwen3-ASR CPU model size"
         required: true
         type: choice
-        default: large
+        default: small
         options:
           - small
           - large

@@ -59,7 +59,7 @@ def main():
     p=argparse.ArgumentParser()
     p.add_argument('--drive-id',required=True)
     p.add_argument('--output-pub',required=True)
-    p.add_argument('--model',choices=list(MODEL_REPOS),default='small')
+    p.add_argument('--model',choices=list(MODEL_REPOS),default='large-v3-turbo')
     p.add_argument('--max-wait',type=int,default=1800)
     a=p.parse_args()
     output_pub=serialization.load_der_public_key(base64.b64decode(a.output_pub,validate=True))

@@ -45,3 +45,11 @@ This distinction must stay explicit; do not revive the old Windows-only directio
 - Stage 1: Add open-source `large-v3-turbo` CTranslate2 weights to current GitHub-hosted Whisper implementation, keep existing Small production baseline and encrypted private-media protocol. Log separate model download and real inference durations; compare actual SRT privately, no user text in GitHub.
 - Stage 2: Evaluate Qwen3-ASR 0.6B CPU feasibility, then optionally 1.7B and forced alignment only if the 16GB standard runner can handle it. Different transcription backends require their own word/char timing solution.
 - Preserve requirements: **GitHub standard public runner only, no Windows/local hardware, no hosted quota-limited AI inference, code-only public repo**. Successful baseline production from run 44699772481 remains the last validated end-to-end reference until a stronger model actually passes.
+
+## 2026-11-20 — model selection milestone (aggregate evidence only)
+
+- Stage 1: Real private audio Large-v3 Turbo SRT PASS [run 44727437501]; 31 cues, model download 7.28s, ASR generation 40.21s. Baseline Small PASS remains 32 cues [run 44699772481]. Both produced valid SRT.
+- Stage 2: Real private audio Qwen3-ASR 0.6B text-only PASS [run 44729262014]; model download 8.23s, text generation 25.30s. Qwen has no SRT word timing in this lane; do not report it as delivered SRT.
+- Stage 3: Qwen3-ASR 1.7B synthetic CPU feasibility PASS [run 44729975533], peak ~6.5GiB RSS; real private-media quality test NOT VERIFIED. Forced alignment NOT VERIFIED.
+- Provisional production default: **Large-v3 Turbo** + optional private **Qwen3-ASR 0.6B cross-check**, without blindly changing text. Small is fallback. The new `tools/text_review.py` generates private disagreement reports; compare them with the audio before edits.
+- See [MODEL_EVALUATION.md](MODEL_EVALUATION.md). The final optimal model combination requires human word-level quality evaluation on more representative recordings; do not claim a definitive accuracy winner based on AI-to-AI text similarity.

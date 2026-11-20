@@ -46,3 +46,7 @@ The CTranslate2 model directory must be present locally **within the GitHub runn
 - **Verified 2026-11-20:** one real private recording (58.191 seconds) generated a valid 32-cue SRT via a GitHub-hosted CPU Runner; ciphertext was privately returned, decrypted, and a user-facing SRT attachment was delivered. See [HANDOFF](HANDOFF.md).
 - **Not verified:** automatic one-action future-user audio upload to GitHub without orchestration; human listening-based word-perfect QA; large-v3 runtime for user recordings.
 - See [GITHUB_CLOUD_EXECUTION.md](GITHUB_CLOUD_EXECUTION.md) for architecture background and [DELIVERY_GATE.md](DELIVERY_GATE.md) for acceptance rules. Historical documents mentioning blocked transfer describe the former state; the verified 2026-11-20 execution in HANDOFF supersedes those blockers.
+
+## Model upgrade results (2026-11-20)
+
+The GitHub-hosted production SRT default is now **Large-v3 Turbo**, validated with a real private recording. Choose Small explicitly as a fallback. An optional private Qwen3-ASR 0.6B benchmarking workflow can generate a second-opinion transcript and `tools/text_review.py` compares the private outputs without modifying timestamps or publishing personal text. Qwen3-ASR 1.7B passed synthetic CPU feasibility only; alignment and real-audio SRT remain unverified. See [MODEL_EVALUATION.md](MODEL_EVALUATION.md).
