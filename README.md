@@ -50,3 +50,9 @@ The CTranslate2 model directory must be present locally **within the GitHub runn
 ## Model upgrade results (2026-11-20)
 
 The GitHub-hosted production SRT default is now **Large-v3 Turbo**, validated with a real private recording. Choose Small explicitly as a fallback. An optional private Qwen3-ASR 0.6B benchmarking workflow can generate a second-opinion transcript and `tools/text_review.py` compares the private outputs without modifying timestamps or publishing personal text. Qwen3-ASR 1.7B passed synthetic CPU feasibility only; alignment and real-audio SRT remain unverified. See [MODEL_EVALUATION.md](MODEL_EVALUATION.md).
+
+## Model comparison milestone (2026-11-20)
+
+Additional real private recording trials now include Breeze-ASR-25 (**33 cues**) and FireRedASR2-AED (**24 cues**, actual [GitHub production run 44752794627](https://github.com/rayray12zx3-sys/subtitle-srt-toolkit/actions/runs/44752794627)) alongside Turbo (**31 cues**) and Small (**32 cues**). Private SRT outputs were encrypted, structurally validated, delivered to chat, and kept in an owner-only Google Drive evaluation folder, **never published in this repository**.
+
+The production default remains **Large-v3 Turbo**, Small fallback, Qwen3-ASR 0.6B optional private-text cross-check. Models are NOT ranked by genuine CER/WER: only cross-recognizer string similarity was measured, without human verified truth. FireRed had greater inference cost and no demonstrated accuracy advantage for this test. See [MODEL_EVALUATION.md](MODEL_EVALUATION.md) for aggregate evidence.
