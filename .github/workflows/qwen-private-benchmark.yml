@@ -1,0 +1,34 @@
+name: Qwen3-ASR 0.6B private audio benchmark (encrypted text only)
+on:
+  workflow_dispatch:
+    inputs:
+      encrypted_drive_file_id:
+        description: "ID of temporary AES-GCM ciphertext, NEVER raw audio"
+        required: true
+        type: string
+      output_public_key:
+        description: "Caller RSA public key only, never private"
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  qwen-private:
+    runs-on: ubuntu-latest
+    timeout-minutes: 100
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: CPU dependencies and encryption only
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq build-essential libopenblas-dev ffmpeg git curl
+          python -m pip install 'cryptography>=42,<48' 'huggingface_hub>=0.26,<3'
+      - name: Encrypted private input, local CPU Qwen ASR, encrypted text output
+        env:
+          DRIVE_ID: ${{ inputs.encrypted_drive_file_id }}
+          OUTPUT_PUB: ${{ inputs.output_public_key }}
+        run: |
+          python -m tools.qwen_private_benchmark --drive-id "$DRIVE_ID" --output-pub "$OUTPUT_PUB"
