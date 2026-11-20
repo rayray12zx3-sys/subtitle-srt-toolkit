@@ -1,0 +1,45 @@
+name: Turbo CPU Whisper smoke test (synthetic speech only)
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/turbo-smoke.yml'
+permissions:
+  contents: read
+jobs:
+  real-inference-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install open-source dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq espeak-ng ffmpeg
+          python -m pip install --disable-pip-version-check -r requirements.txt huggingface_hub
+      - name: Create a synthetic voice recording (no private media)
+        run: |
+          espeak-ng -v en-us -s 145 -w /tmp/synthetic.wav 'Hello everyone. This is a subtitle generation test.'
+      - name: Download static open-source model weights (not an inference API)
+        run: |
+          python - <<'PY'
+          from huggingface_hub import snapshot_download
+          snapshot_download(repo_id='deepdml/faster-whisper-large-v3-turbo-ct2', local_dir='/tmp/local-model')
+          PY
+      - name: Run real offline model inference on GitHub-hosted CPU
+        env:
+          HF_HUB_OFFLINE: '1'
+          TRANSFORMERS_OFFLINE: '1'
+        run: |
+          python transcribe.py /tmp/synthetic.wav --model-dir /tmp/local-model --language en --device cpu --compute-type int8 --output /tmp/test-generated.srt
+          python delivery_gate.py /tmp/synthetic.wav /tmp/test-generated.srt
+          test -s /tmp/test-generated.srt
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('/tmp/test-generated.srt')
+          lines=p.read_text('utf-8-sig').splitlines()
+          print('REAL_WHISPER_INFERENCE_SUCCESS: SRT exists, cue lines:', len(lines))
+          PY
