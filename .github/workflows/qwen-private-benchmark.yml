@@ -10,6 +10,14 @@ on:
         description: "Caller RSA public key only, never private"
         required: true
         type: string
+      model_size:
+        description: "Qwen3-ASR CPU model size"
+        required: true
+        type: choice
+        default: large
+        options:
+          - small
+          - large
 permissions:
   contents: read
 jobs:
@@ -30,5 +38,6 @@ jobs:
         env:
           DRIVE_ID: ${{ inputs.encrypted_drive_file_id }}
           OUTPUT_PUB: ${{ inputs.output_public_key }}
+          MODEL_SIZE: ${{ inputs.model_size }}
         run: |
-          python -m tools.qwen_private_benchmark --drive-id "$DRIVE_ID" --output-pub "$OUTPUT_PUB"
+          python -m tools.qwen_private_benchmark --drive-id "$DRIVE_ID" --output-pub "$OUTPUT_PUB" --model-size "$MODEL_SIZE"
