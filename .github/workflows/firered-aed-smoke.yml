@@ -1,0 +1,67 @@
+name: FireRedASR2-AED CPU feasibility (synthetic only)
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/firered-aed-smoke.yml'
+permissions:
+  contents: read
+jobs:
+  firered-cpu:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - name: Install FFmpeg, synthetic voice and CPU-only PyTorch
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq espeak-ng ffmpeg
+          python -m pip install --disable-pip-version-check torch==2.5.1+cpu torchaudio==2.5.1+cpu --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install --disable-pip-version-check \
+            'numpy==1.26.4' 'transformers==4.51.3' 'cn2an==0.5.23' \
+            'kaldiio==2.18.0' 'kaldi_native_fbank==1.15' \
+            'sentencepiece==0.1.99' 'soundfile==0.12.1' \
+            'textgrid' 'peft>=0.13.2' 'huggingface_hub'
+      - name: Fetch pinned official FireRed inference source and synthetic voice
+        run: |
+          git clone https://github.com/FireRedTeam/FireRedASR2S.git /tmp/firered-src
+          git -C /tmp/firered-src checkout 4e7d9aaf4482a47cec1724807026b9b151926eb5
+          espeak-ng -v zh -s 135 -w /tmp/firered-zh.wav '你好今天開始上課'
+          espeak-ng -v en-us -s 140 -w /tmp/firered-en.wav 'Hello welcome to our class'
+      - name: Download official Apache-2.0 open-source AED model weights
+        run: |
+          python - <<'PY'
+          import time
+          from huggingface_hub import snapshot_download,HfApi
+          name='FireRedTeam/FireRedASR2-AED'
+          info=HfApi().model_info(name)
+          started=time.monotonic()
+          snapshot_download(repo_id=name,revision=info.sha,local_dir='/tmp/firered-aed-model')
+          print('FIRERED_OFFICIAL_MODEL_REV='+info.sha)
+          print('FIRERED_DOWNLOAD_SECONDS=%.2f'%(time.monotonic()-started))
+          PY
+          test -s /tmp/firered-aed-model/model.pth.tar
+      - name: Actual CPU model inference and timestamp feasibility
+        run: |
+          /usr/bin/time -f 'FIRERED_CPU_WALL_SECONDS=%e FIRERED_PEAK_RSS_KB=%M' python - <<'PY'
+          import os,sys,time
+          sys.path.insert(0,'/tmp/firered-src')
+          from fireredasr2s.fireredasr2 import FireRedAsr2,FireRedAsr2Config
+          import torch
+          torch.set_num_threads(4)
+          cfg=FireRedAsr2Config(use_gpu=False,use_half=False,beam_size=3,nbest=1,return_timestamp=True)
+          start=time.monotonic()
+          asr=FireRedAsr2.from_pretrained('aed','/tmp/firered-aed-model',cfg)
+          print('FIRERED_MODEL_LOAD_SECONDS=%.2f'%(time.monotonic()-start),flush=True)
+          start=time.monotonic()
+          result=asr.transcribe(['synthetic_zh','synthetic_en'],['/tmp/firered-zh.wav','/tmp/firered-en.wav'])
+          seconds=time.monotonic()-start
+          assert result and any(str(x.get('text','')).strip() for x in result)
+          count=sum(len(x.get('timestamp') or []) for x in result)
+          print('FIRERED_SYNTHETIC_CPU_ASR_PASS: utterances=%d timestamp_items=%d'%(len(result),count),flush=True)
+          print('FIRERED_SYNTHETIC_CPU_ASR_SECONDS=%.2f'%seconds,flush=True)
+          print('SYNTHETIC_ONLY_REAL_PRIVATE_SRT_UNVERIFIED',flush=True)
+          PY
