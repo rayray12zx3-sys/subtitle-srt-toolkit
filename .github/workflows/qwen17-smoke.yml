@@ -1,0 +1,40 @@
+name: Qwen3-ASR 1.7B CPU feasibility (synthetic speech only)
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/qwen17-smoke.yml'
+permissions:
+  contents: read
+jobs:
+  qwen17-cpu:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install CPU-only build and audio dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq build-essential libopenblas-dev espeak-ng ffmpeg curl git
+      - name: Build pinned Qwen3-ASR C inference engine
+        run: |
+          git clone https://github.com/antirez/qwen-asr.git /tmp/qwen-asr
+          git -C /tmp/qwen-asr checkout 924694251d9e0f18e5d86bbd06aa3ab5f870002d
+          make -C /tmp/qwen-asr blas -j 2
+      - name: Download static Apache-2.0 open-source Qwen model weights
+        run: |
+          cd /tmp/qwen-asr
+          ./download_model.sh --model large --dir /tmp/qwen3-asr-1.7b
+      - name: Transcribe synthetic voice on GitHub CPU without any AI inference API
+        run: |
+          espeak-ng -v en-us -s 150 -w /tmp/qwen17-synthetic.wav 'Hello everyone. This is a subtitle generation test.'
+          set -o pipefail
+          /usr/bin/time -f 'QWEN_CPU_WALL_SEC=%e QWEN_PEAK_RSS_KB=%M' /tmp/qwen-asr/qwen_asr -d /tmp/qwen3-asr-1.7b -i /tmp/qwen17-synthetic.wav --silent > /tmp/qwen17-output.txt
+          test -s /tmp/qwen17-output.txt
+          python - <<'PY'
+          from pathlib import Path
+          text=Path('/tmp/qwen17-output.txt').read_text(encoding='utf-8').strip()
+          assert text and len(text)>8
+          print('QWEN3_ASR_1_7B_REAL_CPU_INFERENCE_SUCCESS: transcription non-empty; characters:',len(text))
+          print('SRT_WORD_TIMESTAMPS_NOT_VERIFIED: this workflow tests transcription only')
+          PY
