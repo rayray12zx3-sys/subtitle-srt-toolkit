@@ -109,16 +109,19 @@ def main():
     args = parser.parse_args()
 
     if not args.audio.is_file():
-        parser.error(f"Audio file not found: {args.audio}")
+        raise SystemExit(f"BLOCKED: Audio file not found: {args.audio}")
     try:
         model_dir = require_local_model(args.model_dir)
     except ValueError as exc:
-        parser.error(str(exc))
+        raise SystemExit(f"BLOCKED: {exc}") from exc
     if args.max_chars < 1 or args.max_seconds <= 0 or args.max_gap < 0:
-        parser.error("Invalid subtitle size/timing limits")
+        raise SystemExit("BLOCKED: Invalid subtitle size/timing limits")
 
     enable_offline_mode()
-    from faster_whisper import WhisperModel
+    try:
+        from faster_whisper import WhisperModel
+    except ImportError as exc:
+        raise SystemExit("BLOCKED: Local faster-whisper package is not installed") from exc
 
     converter = None
     if args.traditional:
@@ -134,12 +137,12 @@ def main():
     )
     words = [word for seg in segments for word in (seg.words or [])]
     if not words:
-        raise SystemExit("No recognized speech; SRT not written")
+        raise SystemExit("BLOCKED: No recognized speech; SRT not written")
 
     grouped = group_words(words, args.max_chars, args.max_seconds, args.max_gap)
     target = args.output or args.audio.with_suffix(".srt")
     if target.suffix.lower() != ".srt":
-        parser.error("Output must have the .srt extension")
+        raise SystemExit("BLOCKED: Output must have the .srt extension")
     pending = target.with_name(target.stem + ".pending.srt")
     try:
         count = write_srt(
