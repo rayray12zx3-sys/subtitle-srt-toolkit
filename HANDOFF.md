@@ -53,3 +53,10 @@ This distinction must stay explicit; do not revive the old Windows-only directio
 - Stage 3: Qwen3-ASR 1.7B synthetic CPU feasibility PASS [run 44729975533], peak ~6.5GiB RSS; real private-media quality test NOT VERIFIED. Forced alignment NOT VERIFIED.
 - Provisional production default: **Large-v3 Turbo** + optional private **Qwen3-ASR 0.6B cross-check**, without blindly changing text. Small is fallback. The new `tools/text_review.py` generates private disagreement reports; compare them with the audio before edits.
 - See [MODEL_EVALUATION.md](MODEL_EVALUATION.md). The final optimal model combination requires human word-level quality evaluation on more representative recordings; do not claim a definitive accuracy winner based on AI-to-AI text similarity.
+
+## 2026-11-20 — Breeze/FireRed candidate milestone
+
+- Prior model comparison report and 6 private reference files backed up to a persistent, owner-only Google Drive folder; 2026-11-20 Breeze real SRT added as a seventh file; the main report updated **in place** and temporary ciphertext deleted.
+- **Breeze actual encrypted 58.191s recording => 33-cue validated SRT PASS** on GitHub standard CPU [run 44745387647](https://github.com/rayray12zx3-sys/subtitle-srt-toolkit/actions/runs/44745387647). Model weight download 17.61s; inference/output 59.31s. Did not replace production default; quality relative to AI Studio is unverified. A prior shortened RSA public-key dispatch failed before processing media; compact public key support repaired it.
+- FireRedASR2-AED synthetic Chinese/English CPU inference PASS [run 44740104063](https://github.com/rayray12zx3-sys/subtitle-srt-toolkit/actions/runs/44740104063): 13 timestamp items, memory ~9.1 GiB, actual-user-audio SRT NOT TESTED.
+- See [MODEL_EVALUATION.md](MODEL_EVALUATION.md) for aggregate evidence. Private raw audio, SRT, transcript, ciphertext, or private-media hashes must never enter this public repo. Next possible milestone: FireRed real-media private timing evaluation with the same security and completion gate, and user-approved legal/license review for third-party model conversion.
