@@ -1,49 +1,40 @@
 # HANDOFF — subtitle-srt-toolkit
 
-## Current direction (confirmed 2026-11-20)
+## Canonical requirements (confirmed 2026-11-20)
 
-- Public GitHub repository contains **only code**.
-- The subtitle generation path must **never consume a limited free AI-service quota**, subscription credits, or paid inference requests.
-- Use a pre-downloaded local Whisper/faster-whisper model on CPU/GPU, with offline OpenCC conversion.
-- **No** Google AI Studio/Gemini, OpenAI API, Hugging Face Inference API, or other cloud AI transcription.
-- GitHub public standard-runner Actions may run code-only unit tests (free minutes per GitHub documentation, subject to job and fair-use limits). No personal media in CI.
-- Model not present => fail without contacting the network.
+- Execution target: **GitHub-hosted standard Ubuntu GitHub Actions runner** ONLY. No user Windows/local machine or self-hosted runner without new explicit approval.
+- Public GitHub repository contains **code, docs and synthetic tests only** — never original audio, spoken words, private audio/SRT URLs, private keys, plaintext transcript or user-media artifacts.
+- **No paid/limited-free AI inference quotas.** Run open-source faster-whisper weights locally on the GitHub runner CPU. Downloading static model weights is permitted; hosted inference APIs are not.
+- A generation task cannot be marked completed until a **new, real SRT** from the requested recording is validated and returned to the user in the chat. CI and synthetic tests alone never count.
+- The user wants accurate Traditional Chinese, original-language speech retained, unnecessary punctuation removed, and dependable timing. No claim of human listening verification without actual audio review.
 
-## Verified and not verified
+## Latest production verification — PASS
 
-- **Static guard implemented:** local model-path requirement, offline environment variables, no API service calls in the transcription tool.
-- **CI:** See Actions for results of the latest commit; do not claim pass before inspecting it.
-- **Unverified:** real end-to-end local model transcription on the user's Windows machine, manual word-level verification, and direct delivery of locally generated SRT back to ChatGPT.
-- No always-on personal computer or automatic cloud processing is assumed.
+- **Actual recording processed** by a standard GitHub-hosted Ubuntu runner on 2026-11-20 via [successful cloud workflow run 44699772481](https://github.com/rayray12zx3-sys/subtitle-srt-toolkit/actions/runs/44699772481).
+- GitHub-hosted runner used `ffmpeg`, static open-source `Systran/faster-whisper-small` weights, CPU int8 inference, local OpenCC and `delivery_gate.py`. **Actual 32-cue SRT produced and structurally validated**. Earlier failed runs 44698424276 (ffmpeg missing) and 44699060502 (Python module path) were repaired.
+- A private ephemeral RSA OAEP + AES-GCM exchange delivered encrypted recording through temporary shared encrypted-only Google Drive blob, never plaintext. The corresponding private decryption key remained on the ephemeral GitHub runner. An independently generated output public key encrypted SRT for return to the ChatGPT session, where it was decrypted and validated against the original 58.191-second recording. Public Drive temporary input files were deleted upon success.
+- Two private conversation files were produced and verified: a **raw 32-cue Whisper Small SRT** and a **30-cue dual-transcript, text-corrected SRT**. Do **not** commit either file or their contents into the public repository. They were delivered in the 2026-11-20 conversation.
+- **No manual listening QA claim:** the corrected version uses previous AI transcript as reference, not human audio-by-audio checking.
+- [Synthetic 3-cue true inference smoke test PASS](https://github.com/rayray12zx3-sys/subtitle-srt-toolkit/actions/runs/44697359699). This is supplementary evidence; the production run above is the end-to-end evidence.
 
-## Next scoped milestone
+## Current implementation
 
-Verify a real audio-to-SRT run with local model files, examine accuracy, and design a private return path to the chat that uses no metered/free-tier AI quota. Keep the private audio and SRT out of the public repository. Do not add another service or repository unless necessary.
+- `tools/cloud_handshake.py`: Runner-owned ephemeral RSA keypair, public-key upload handshake, encrypted ciphertext fetch, CPU Whisper transcription, private encrypted SRT egress in job log.
+- `.github/workflows/cloud-handshake.yml`: user-authorized workflow_dispatch using only temporary encrypted file ID, caller output RSA **public** key and model choice. Standard GitHub runner, no API quota or repo secret required.
+- `transcribe.py`: pre-existing local CTranslate2 model-only inference, strict offline/fail-closed model path.
+- `delivery_gate.py`: validates nonempty and ordered subtitle cues relative to source audio duration; does not assert delivery itself.
+- `.github/workflows/cloud-smoke.yml`: reproducible synthetic speech real-Whisper smoke check.
+- Superseded `SRT_TRANSPORT_KEY` prototype and workflow have been removed from main to avoid requiring credentials.
 
-The user's newer hard limit supersedes any earlier plan to use Google AI Studio for transcription.
+## Remaining quality/design improvements (not a regression of production PASS)
 
-## 2026-11-20 — private-audio comparison attempt (BLOCKED)
+- Automate the orchestration of ephemeral handshake and encrypted Drive file updating, so future chat uploads avoid manual step-by-step tool calls.
+- Improve segmentation/word-level correctness on Mandarin-English code switching; Whisper Small included some unnatural punctuation/word splits. Model upgrades are allowed only as static downloaded weights running on standard GitHub runner and with verified costs/limits.
+- Perform real audio listening verification if a claim of fully proofread word-for-word subtitles is required.
+- Retain code-only privacy rule; never expose AES keys or raw captions in logs, public artifacts, workflows, dispatch inputs or source code.
 
-- The ChatGPT execution environment could read the private uploaded WAV and existing SRT, but had no `faster_whisper`, `ctranslate2`, `opencc`, or CTranslate2 Whisper model weights installed. Its network could not resolve the public model-download domain. No hosted inference or metered API was used.
-- This environment therefore produced **no new offline transcript** and **no model-to-model accuracy comparison**. Do not misstate the existing seven passing code unit tests as evidence of end-to-end transcription.
-- The existing SRT was inspected *outside GitHub* for format/timing only. Source audio, filename, transcript and SRT text were **not** submitted to the public repository.
-- Next action: in a machine with a pre-downloaded, locally available CTranslate2 Whisper model and project-local Python packages, run the private audio through `transcribe.py --model-dir <local-path>`; compare the generated SRT to the baseline off-repository. Keep the source and artifacts private.
+## State
 
-## Mandatory completion condition (2026-11-20)
-
-- **NO VALIDATED SRT DELIVERED TO USER => TASK NOT COMPLETED.** This is a hard requirement, not advice.
-- Implemented: `delivery_gate.py` fails closed on missing, empty, unparseable, overlapping or out-of-range SRT. `transcribe.py` validates a temporary file before publishing the output and otherwise returns `BLOCKED`.
-- A valid file yields only `OUTPUT_VALIDATED_NOT_YET_DELIVERED`; an executor must separately verify a real, accessible attachment/link in the conversation before declaring `COMPLETED`.
-- Do not substitute old SRT, code checks, issues, or progress messages for a newly produced requested subtitle artifact. No finite free-tier AI quotas, paid models, hosted inference, or audio in this public GitHub repository.
-- The private uploaded audio's **new offline model transcription** remains BLOCKED because this current container lacks model weights and cannot download them. A previously delivered SRT exists but must not be represented as the output of this offline pipeline.
-- Next acceptance: real offline model run with private audio and end-to-end SRT delivery. Follow [DELIVERY_GATE.md](DELIVERY_GATE.md).
-
-## 2026-11-20 — user correction: GitHub cloud ONLY (supersedes local execution assumption)
-
-- **Confirmed requirement:** Speech-to-text inference must run on **GitHub-hosted standard runner** in GitHub Actions, not on the user's Windows PC, local workstation, or self-hosted runner. The user never authorized use of personal local compute. Earlier local-Windows routing was an assistant mistake and is superseded.
-- Public repo **contains only code and documentation**. No WAV, SRT, transcript, private URL, secret, input payload, or real-media checksum may be committed, included in public workflow inputs, printed to logs, or uploaded as public Actions artifacts.
-- **Cost constraint:** Use only free standard GitHub-hosted runners on the PUBLIC repository and open-source Whisper model weights for runner-local inference; no quota-limited free AI inference, token/minute/request API, paid GPU runners, or subscription credits. GitHub's free standard public runner usage is subject to per-job/platform limits and terms, not guaranteed infinite capacity.
-- The runner can explicitly download **static open-source model files** before execution, then execute faster-whisper on the GitHub-hosted Ubuntu runner without using an inference API. The current program's fail-closed `--model-dir` rule remains in force at inference time.
-- **Critical unimplemented prerequisites:** private temporary ingress of audio to the GitHub runner, and private egress of the validated SRT to the chat, without disclosing either on the public repository or its artifacts/logs. GitHub manual workflow inputs should NOT contain a public/private media URL or sensitive data. Do not attempt to bypass these constraints with exposed media links.
-- Full task remains **BLOCKED / NOT COMPLETED** until an actual WAV is handled by the Github-hosted runner and the newly generated validated SRT is delivered in the conversation. Do not repeat Windows setup instructions or suggest self-hosted/local fallback without explicit fresh approval.
-- Current code-only GitHub Actions unit test success does not satisfy production transcription. See [GITHUB_CLOUD_EXECUTION.md](GITHUB_CLOUD_EXECUTION.md).
+**PRODUCTION TRANSCRIPTION AND PRIVATE SRT DELIVERY: PASS for 2026-11-20 recording.**
+**FULLY AUTOMATED REUSABLE ONE-STEP CHAT HANDOFF: NOT YET VERIFIED.**
+This distinction must stay explicit; do not revive the old Windows-only direction or historical missing-model blocker as current truth.
