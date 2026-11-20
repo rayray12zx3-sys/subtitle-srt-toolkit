@@ -21,6 +21,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.10'
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: firered-cpu-py310-dependencies-v1
       - name: Install FFmpeg and CPU-only FireRed dependencies
         run: |
           sudo apt-get update -qq
@@ -34,4 +38,4 @@ jobs:
           OUTPUT_PUB: ${{ inputs.output_public_key }}
           HF_HUB_DISABLE_TELEMETRY: '1'
         run: |
-          python -m tools.firered_private_runner --drive-id "$ENCRYPTED_ID" --output-pub "$OUTPUT_PUB"
+          /usr/bin/time -f "FIRERED_REAL_CPU_WALL_SECONDS=%e FIRERED_REAL_PEAK_RSS_KB=%M" python -m tools.firered_private_runner --drive-id "$ENCRYPTED_ID" --output-pub "$OUTPUT_PUB"
