@@ -1,0 +1,60 @@
+name: Breeze-ASR-25 CPU SRT smoke (synthetic only)
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/breeze-asr25-smoke.yml'
+permissions:
+  contents: read
+jobs:
+  breeze-cpu:
+    runs-on: ubuntu-latest
+    timeout-minutes: 70
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install CPU audio and local inference dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq espeak-ng ffmpeg
+          python -m pip install -r requirements.txt huggingface_hub
+      - name: Generate synthetic Mandarin and English audio
+        run: |
+          espeak-ng -v zh -s 135 -w /tmp/breeze-zh.wav '你好今天我們學英文'
+          espeak-ng -v en-us -s 140 -w /tmp/breeze-en.wav 'Today we will learn English together.'
+          ffmpeg -hide_banner -loglevel error -y -i /tmp/breeze-zh.wav -i /tmp/breeze-en.wav \
+            -filter_complex '[0:a][1:a]concat=n=2:v=0:a=1[out]' -map '[out]' \
+            -ac 1 -ar 16000 /tmp/breeze-synthetic.wav
+      - name: Download community CT2 model generated from official Apache-2.0 Breeze
+        run: |
+          python - <<'PY'
+          import time
+          from huggingface_hub import HfApi, snapshot_download
+          repo='shdennlin/breeze-asr-25-ct2'
+          info=HfApi().model_info(repo)
+          start=time.monotonic()
+          snapshot_download(repo_id=repo,revision=info.sha,allow_patterns=['int8/*'],local_dir='/tmp/breeze-weights')
+          print('BREEZE_CT2_SOURCE_SHA='+info.sha)
+          print('BREEZE_MODEL_DOWNLOAD_SECONDS=%.2f'%(time.monotonic()-start))
+          PY
+          test -s /tmp/breeze-weights/int8/model.bin
+          test -s /tmp/breeze-weights/int8/config.json
+      - name: Generate real SRT on CPU and check timing
+        env:
+          HF_HUB_OFFLINE: '1'
+          TRANSFORMERS_OFFLINE: '1'
+        run: |
+          /usr/bin/time -f 'BREEZE_CPU_WALL_SECONDS=%e BREEZE_PEAK_RSS_KB=%M' \
+            python transcribe.py /tmp/breeze-synthetic.wav \
+            --model-dir /tmp/breeze-weights/int8 --language zh --traditional \
+            --device cpu --compute-type int8 --output /tmp/breeze-synthetic.srt
+          python delivery_gate.py /tmp/breeze-synthetic.wav /tmp/breeze-synthetic.srt
+          python - <<'PY'
+          from pathlib import Path
+          cues=Path('/tmp/breeze-synthetic.srt').read_text('utf-8-sig').strip().split('\n\n')
+          assert len(cues)>=1
+          print('BREEZE_ASR25_REAL_CPU_SYNTHETIC_SRT_PASS: cues='+str(len(cues)))
+          print('ONLY_SYNTHETIC_TEST; REAL_USER_AUDIO_AND_TIMING_QUALITY_UNVERIFIED')
+          PY
