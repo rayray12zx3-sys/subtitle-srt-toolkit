@@ -45,4 +45,4 @@ jobs:
           OUTPUT_PUB: ${{ inputs.output_public_key }}
           MODEL_NAME: ${{ inputs.model }}
         run: |
-          python tools/cloud_handshake.py --drive-id "$DRIVE_ID" --output-pub "$OUTPUT_PUB" --model "$MODEL_NAME"
+          python -m tools.cloud_handshake --drive-id "$DRIVE_ID" --output-pub "$OUTPUT_PUB" --model "$MODEL_NAME"
