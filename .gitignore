@@ -221,3 +221,19 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Private input and output: never commit recordings or subtitles
+*.wav
+*.mp3
+*.m4a
+*.aac
+*.flac
+*.ogg
+*.mp4
+*.mov
+*.srt
+*.vtt
+*.ass
+*.sbv
+*.jsonl
+models/
