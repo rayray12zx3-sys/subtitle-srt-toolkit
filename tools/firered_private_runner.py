@@ -149,7 +149,7 @@ def main():
             sections.append((offset,duration,response[0]["timestamp"]))
             p.unlink()
         asr_s=time.monotonic()-t
-        cues=make_cues(sections,sum(x[2] for x in sections),OpenCC("s2t").convert)
+        cues=make_cues(sections,sum(x[1] for x in sections),OpenCC("s2t").convert)
         if not cues:raise RuntimeError("No SRT cues")
         with out.open("w",encoding="utf-8-sig",newline="\n") as fp:
             for i,(a,b,text) in enumerate(cues,1):
