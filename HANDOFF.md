@@ -28,3 +28,12 @@ The user's newer hard limit supersedes any earlier plan to use Google AI Studio 
 - This environment therefore produced **no new offline transcript** and **no model-to-model accuracy comparison**. Do not misstate the existing seven passing code unit tests as evidence of end-to-end transcription.
 - The existing SRT was inspected *outside GitHub* for format/timing only. Source audio, filename, transcript and SRT text were **not** submitted to the public repository.
 - Next action: in a machine with a pre-downloaded, locally available CTranslate2 Whisper model and project-local Python packages, run the private audio through `transcribe.py --model-dir <local-path>`; compare the generated SRT to the baseline off-repository. Keep the source and artifacts private.
+
+## Mandatory completion condition (2026-11-20)
+
+- **NO VALIDATED SRT DELIVERED TO USER => TASK NOT COMPLETED.** This is a hard requirement, not advice.
+- Implemented: `delivery_gate.py` fails closed on missing, empty, unparseable, overlapping or out-of-range SRT. `transcribe.py` validates a temporary file before publishing the output and otherwise returns `BLOCKED`.
+- A valid file yields only `OUTPUT_VALIDATED_NOT_YET_DELIVERED`; an executor must separately verify a real, accessible attachment/link in the conversation before declaring `COMPLETED`.
+- Do not substitute old SRT, code checks, issues, or progress messages for a newly produced requested subtitle artifact. No finite free-tier AI quotas, paid models, hosted inference, or audio in this public GitHub repository.
+- The private uploaded audio's **new offline model transcription** remains BLOCKED because this current container lacks model weights and cannot download them. A previously delivered SRT exists but must not be represented as the output of this offline pipeline.
+- Next acceptance: real offline model run with private audio and end-to-end SRT delivery. Follow [DELIVERY_GATE.md](DELIVERY_GATE.md).
