@@ -21,3 +21,10 @@
 Verify a real audio-to-SRT run with local model files, examine accuracy, and design a private return path to the chat that uses no metered/free-tier AI quota. Keep the private audio and SRT out of the public repository. Do not add another service or repository unless necessary.
 
 The user's newer hard limit supersedes any earlier plan to use Google AI Studio for transcription.
+
+## 2026-11-20 — private-audio comparison attempt (BLOCKED)
+
+- The ChatGPT execution environment could read the private uploaded WAV and existing SRT, but had no `faster_whisper`, `ctranslate2`, `opencc`, or CTranslate2 Whisper model weights installed. Its network could not resolve the public model-download domain. No hosted inference or metered API was used.
+- This environment therefore produced **no new offline transcript** and **no model-to-model accuracy comparison**. Do not misstate the existing seven passing code unit tests as evidence of end-to-end transcription.
+- The existing SRT was inspected *outside GitHub* for format/timing only. Source audio, filename, transcript and SRT text were **not** submitted to the public repository.
+- Next action: in a machine with a pre-downloaded, locally available CTranslate2 Whisper model and project-local Python packages, run the private audio through `transcribe.py --model-dir <local-path>`; compare the generated SRT to the baseline off-repository. Keep the source and artifacts private.
