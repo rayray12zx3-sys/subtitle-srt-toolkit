@@ -1,0 +1,37 @@
+name: FireRedASR2-AED private GitHub CPU SRT benchmark
+on:
+  workflow_dispatch:
+    inputs:
+      encrypted_drive_file_id:
+        description: 'Temporary public-download AES-GCM ciphertext ID; never plaintext media'
+        required: true
+        type: string
+      output_public_key:
+        description: 'Caller RSA public key or rsa-n compact public modulus only'
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  firered-private:
+    runs-on: ubuntu-latest
+    timeout-minutes: 110
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - name: Install FFmpeg and CPU-only FireRed dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg git
+          python -m pip install torch==2.5.1+cpu torchaudio==2.5.1+cpu --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install 'numpy==1.26.4' 'transformers==4.51.3' 'cn2an==0.5.23' 'kaldiio==2.18.0' 'kaldi_native_fbank==1.15' 'sentencepiece==0.1.99' 'soundfile==0.12.1' 'textgrid' 'peft>=0.13.2' 'huggingface_hub' 'cryptography>=42,<48' 'opencc-python-reimplemented'
+          python -m py_compile tools/firered_private_runner.py
+      - name: Infer FireRed privately on GitHub-hosted CPU and encrypt validated SRT
+        env:
+          ENCRYPTED_ID: ${{ inputs.encrypted_drive_file_id }}
+          OUTPUT_PUB: ${{ inputs.output_public_key }}
+          HF_HUB_DISABLE_TELEMETRY: '1'
+        run: |
+          python -m tools.firered_private_runner --drive-id "$ENCRYPTED_ID" --output-pub "$OUTPUT_PUB"
