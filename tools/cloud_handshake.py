@@ -16,6 +16,21 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from huggingface_hub import snapshot_download
 
+MODEL_REPOS = {
+    'tiny': 'Systran/faster-whisper-tiny',
+    'base': 'Systran/faster-whisper-base',
+    'small': 'Systran/faster-whisper-small',
+    'medium': 'Systran/faster-whisper-medium',
+    'large-v3': 'Systran/faster-whisper-large-v3',
+    'large-v3-turbo': 'deepdml/faster-whisper-large-v3-turbo-ct2',
+}
+
+def get_model_repo(name):
+    if name not in MODEL_REPOS:
+        raise ValueError('Unknown model choice')
+    return MODEL_REPOS[name]
+
+
 MAGIC = b'SRT2'
 INPUT_AAD = b'subtitle-srt-toolkit/input2'
 OUTPUT_AAD = b'subtitle-srt-toolkit/output2'
@@ -57,7 +72,7 @@ def main():
     p=argparse.ArgumentParser()
     p.add_argument('--drive-id',required=True)
     p.add_argument('--output-pub',required=True)
-    p.add_argument('--model',choices=['tiny','base','small','medium','large-v3'],default='small')
+    p.add_argument('--model',choices=list(MODEL_REPOS),default='small')
     p.add_argument('--max-wait',type=int,default=1800)
     a=p.parse_args()
     output_pub=serialization.load_der_public_key(base64.b64decode(a.output_pub,validate=True))
@@ -84,15 +99,22 @@ def main():
         source=root/'source.opus'; audio=root/'audio.wav'; srt=root/'output.srt'; model=root/'model'
         source.write_bytes(source_bytes)
         subprocess.run(['ffmpeg','-hide_banner','-loglevel','error','-y','-i',str(source),'-ar','16000','-ac','1',str(audio)],check=True)
-        snapshot_download(repo_id=f'Systran/faster-whisper-{a.model}',local_dir=str(model))
+        model_start = time.monotonic()
+        snapshot_download(repo_id=get_model_repo(a.model),local_dir=str(model))
+        download_sec = time.monotonic() - model_start
+        asr_start = time.monotonic()
         env={**os.environ,'HF_HUB_OFFLINE':'1','TRANSFORMERS_OFFLINE':'1','HF_HUB_DISABLE_TELEMETRY':'1'}
         subprocess.run([sys.executable,str(Path(__file__).resolve().parents[1]/'transcribe.py'),str(audio),'--model-dir',str(model),'--device','cpu','--compute-type','int8','--language','zh','--traditional','--output',str(srt)],env=env,check=True,stdout=subprocess.DEVNULL)
+        asr_sec = time.monotonic() - asr_start
         from delivery_gate import validate_delivery
         report=validate_delivery(audio,srt)
         if report['status'] != 'OUTPUT_VALIDATED_NOT_YET_DELIVERED':
             raise SystemExit('BLOCKED: Invalid SRT')
         print('SRT_OUTPUT_CIPHER_B64='+base64.b64encode(pack(srt.read_bytes(),output_pub,OUTPUT_AAD)).decode('ascii'),flush=True)
         print('SRT_VALIDATED_CUES='+str(report['cues']),flush=True)
+        print('SRT_MODEL_ID='+a.model,flush=True)
+        print(f'SRT_MODEL_DOWNLOAD_SECONDS={download_sec:.2f}',flush=True)
+        print(f'SRT_ASR_GENERATION_SECONDS={asr_sec:.2f}',flush=True)
         print('OUTPUT_VALIDATED_NOT_YET_DELIVERED',flush=True)
 
 if __name__ == '__main__':
