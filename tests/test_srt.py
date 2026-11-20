@@ -19,6 +19,10 @@ class SRTTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             get_model_repo("external-api")
 
+    def test_breeze_model_registry(self):
+        self.assertEqual(get_model_repo("breeze-asr-25"),
+                         "shdennlin/breeze-asr-25-ct2")
+
     def test_timestamp(self):
         self.assertEqual(srt_time(61.234), "00:01:01,234")
 

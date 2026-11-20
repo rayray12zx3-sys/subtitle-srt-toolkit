@@ -87,11 +87,18 @@ def main():
         source.write_bytes(source_bytes)
         subprocess.run(['ffmpeg','-hide_banner','-loglevel','error','-y','-i',str(source),'-ar','16000','-ac','1',str(audio)],check=True)
         model_start = time.monotonic()
-        snapshot_download(repo_id=get_model_repo(a.model),local_dir=str(model))
+        if a.model == 'breeze-asr-25':
+            snapshot_download(repo_id=get_model_repo(a.model),
+                              revision='70660216b01a6f6b7b8c5690767a4763df61755f',
+                              allow_patterns=['int8/*'],local_dir=str(model))
+            actual_model_dir = model / 'int8'
+        else:
+            snapshot_download(repo_id=get_model_repo(a.model),local_dir=str(model))
+            actual_model_dir = model
         download_sec = time.monotonic() - model_start
         asr_start = time.monotonic()
         env={**os.environ,'HF_HUB_OFFLINE':'1','TRANSFORMERS_OFFLINE':'1','HF_HUB_DISABLE_TELEMETRY':'1'}
-        subprocess.run([sys.executable,str(Path(__file__).resolve().parents[1]/'transcribe.py'),str(audio),'--model-dir',str(model),'--device','cpu','--compute-type','int8','--language','zh','--traditional','--output',str(srt)],env=env,check=True,stdout=subprocess.DEVNULL)
+        subprocess.run([sys.executable,str(Path(__file__).resolve().parents[1]/'transcribe.py'),str(audio),'--model-dir',str(actual_model_dir),'--device','cpu','--compute-type','int8','--language','zh','--traditional','--output',str(srt)],env=env,check=True,stdout=subprocess.DEVNULL)
         asr_sec = time.monotonic() - asr_start
         from delivery_gate import validate_delivery
         report=validate_delivery(audio,srt)

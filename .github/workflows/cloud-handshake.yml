@@ -22,6 +22,7 @@ on:
           - medium
           - large-v3
           - large-v3-turbo
+          - breeze-asr-25
 permissions:
   contents: read
 jobs:

@@ -6,6 +6,8 @@ MODEL_REPOS = {
     'medium': 'Systran/faster-whisper-medium',
     'large-v3': 'Systran/faster-whisper-large-v3',
     'large-v3-turbo': 'deepdml/faster-whisper-large-v3-turbo-ct2',
+    # Community CT2 conversion of official Apache-2.0 Taiwan-focused model; evaluated only.
+    'breeze-asr-25': 'shdennlin/breeze-asr-25-ct2',
 }
 
 def get_model_repo(name):
