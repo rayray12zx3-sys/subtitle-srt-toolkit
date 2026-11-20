@@ -23,6 +23,7 @@ def run_command(argv, **kwargs):
 
 def main():
     p = argparse.ArgumentParser()
+    p.add_argument("--model-size", choices=["small", "large"], default="small")
     p.add_argument("--drive-id", required=True)
     p.add_argument("--output-pub", required=True)
     p.add_argument("--max-wait", type=int, default=1800)
@@ -70,7 +71,7 @@ def main():
         run_command(["make", "-C", str(engine), "blas", "-j", "2"], stdout=subprocess.DEVNULL)
         build_sec = time.monotonic() - build_start
         weights_start = time.monotonic()
-        run_command([str(engine / "download_model.sh"), "--model", "small", "--dir", str(model)],
+        run_command([str(engine / "download_model.sh"), "--model", args.model_size, "--dir", str(model)],
                     cwd=str(engine), stdout=subprocess.DEVNULL)
         download_sec = time.monotonic() - weights_start
 
@@ -81,7 +82,7 @@ def main():
         text = result.stdout.strip()
         if len(text) < 20:
             raise SystemExit("BLOCKED: Qwen produced insufficient transcript text")
-        payload = json.dumps({"engine": "qwen3-asr-0.6b", "transcript": text},
+        payload = json.dumps({"engine": "qwen3-asr-0.6b" if args.model_size == "small" else "qwen3-asr-1.7b", "transcript": text},
                              ensure_ascii=False).encode("utf-8")
         print("QWEN_OUTPUT_CIPHER_B64=" + base64.b64encode(pack(payload, recipient, OUTPUT_AAD)).decode("ascii"),
               flush=True)
@@ -89,6 +90,7 @@ def main():
         print(f"QWEN_MODEL_DOWNLOAD_SECONDS={download_sec:.2f}", flush=True)
         print(f"QWEN_ASR_SECONDS={asr_sec:.2f}", flush=True)
         print(f"QWEN_TRANSCRIPT_CHARS={len(text)}", flush=True)
+        print("QWEN_MODEL_SIZE=" + args.model_size, flush=True)
         print("QWEN_TEXT_ONLY_NO_SRT: timestamps require a separate alignment stage", flush=True)
 
 if __name__ == "__main__":
