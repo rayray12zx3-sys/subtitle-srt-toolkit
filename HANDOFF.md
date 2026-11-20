@@ -38,3 +38,10 @@
 **PRODUCTION TRANSCRIPTION AND PRIVATE SRT DELIVERY: PASS for 2026-11-20 recording.**
 **FULLY AUTOMATED REUSABLE ONE-STEP CHAT HANDOFF: NOT YET VERIFIED.**
 This distinction must stay explicit; do not revive the old Windows-only direction or historical missing-model blocker as current truth.
+
+## 2026-11-20 — stepwise model evaluation (in progress)
+
+- User authorized incremental upgrades, comparison logs, and choosing the best combination. Treat any unverified model as `NOT_TESTED`, not as an improvement.
+- Stage 1: Add open-source `large-v3-turbo` CTranslate2 weights to current GitHub-hosted Whisper implementation, keep existing Small production baseline and encrypted private-media protocol. Log separate model download and real inference durations; compare actual SRT privately, no user text in GitHub.
+- Stage 2: Evaluate Qwen3-ASR 0.6B CPU feasibility, then optionally 1.7B and forced alignment only if the 16GB standard runner can handle it. Different transcription backends require their own word/char timing solution.
+- Preserve requirements: **GitHub standard public runner only, no Windows/local hardware, no hosted quota-limited AI inference, code-only public repo**. Successful baseline production from run 44699772481 remains the last validated end-to-end reference until a stronger model actually passes.
