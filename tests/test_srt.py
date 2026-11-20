@@ -5,6 +5,7 @@ from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 from unittest.mock import patch
 
+from tools.cloud_handshake import get_model_repo
 from transcribe import (
     clean_text, enable_offline_mode, group_words, require_local_model,
     srt_time, write_srt,
@@ -12,6 +13,12 @@ from transcribe import (
 
 
 class SRTTests(unittest.TestCase):
+    def test_turbo_model_registry(self):
+        self.assertEqual(get_model_repo("large-v3-turbo"),
+                         "deepdml/faster-whisper-large-v3-turbo-ct2")
+        with self.assertRaises(ValueError):
+            get_model_repo("external-api")
+
     def test_timestamp(self):
         self.assertEqual(srt_time(61.234), "00:01:01,234")
 
