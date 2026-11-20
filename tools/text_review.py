@@ -30,7 +30,10 @@ def read_srt_text(path):
         raise ValueError("Empty SRT")
     return " ".join(result)
 
-def compare(srt_text, second_text, max_items=100):
+def compare(srt_text, second_text, max_items=100, normalizer=None):
+    if normalizer is not None:
+        srt_text = normalizer(srt_text)
+        second_text = normalizer(second_text)
     first = tokens(srt_text)
     second = tokens(second_text)
     diff = []
@@ -60,7 +63,17 @@ def main():
     p.add_argument("second_transcript", type=Path)
     p.add_argument("-o", "--output", required=True, type=Path)
     args = p.parse_args()
-    output = compare(read_srt_text(args.srt), args.second_transcript.read_text("utf-8"))
+    try:
+        from opencc import OpenCC
+    except ImportError:
+        converter = None
+    else:
+        converter = OpenCC("s2t").convert
+    output = compare(read_srt_text(args.srt),
+                     args.second_transcript.read_text("utf-8"),
+                     normalizer=converter)
+    output["hanzi_normalization"] = "OpenCC s2t" if converter else "unavailable: install requirements.txt"
+
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(output, ensure_ascii=False, indent=2), encoding="utf-8")
     print("PRIVATE_COMPARISON_WRITTEN: differences not auto-applied, no hosted AI inference")

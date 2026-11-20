@@ -16,6 +16,13 @@ class ReviewTests(unittest.TestCase):
             path=Path(d)/"sample.srt"
             path.write_text("1\n00:00:00,000 --> 00:00:01,000\n你好\n",encoding="utf-8")
             self.assertEqual(read_srt_text(path), "你好")
+    def test_traditional_normalization_reduces_false_disagreements(self):
+        raw = compare("剛剛來", "刚刚来")
+        converted = compare("剛剛來", "刚刚来",
+                            normalizer=lambda t: t.replace("刚","剛").replace("来","來"))
+        self.assertGreater(raw["candidate_disagreements"], 0)
+        self.assertEqual(converted["candidate_disagreements"], 0)
+
     def test_missing_srt_rejected(self):
         with TemporaryDirectory() as d:
             path=Path(d)/"empty.srt"
