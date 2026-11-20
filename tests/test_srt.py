@@ -5,7 +5,7 @@ from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from tools.cloud_handshake import get_model_repo
+from model_catalog import get_model_repo
 from transcribe import (
     clean_text, enable_offline_mode, group_words, require_local_model,
     srt_time, write_srt,
