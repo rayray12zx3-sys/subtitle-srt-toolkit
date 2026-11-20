@@ -46,3 +46,15 @@ The unit tests do not download models, make inference requests, or use audio. Th
 Never upload personal audio, transcripts, subtitles, model weights, login secrets, or generated media to this public GitHub repository, Issues, Pull Requests, Actions logs, artifacts or Releases. `.gitignore` is a safeguard, not a permission system.
 
 For repeatable private transcription: the audio stays on your device, the offline model runs there, and the resulting SRT remains outside this GitHub repository.
+
+## Mandatory completion gate: actual SRT delivery
+
+See [DELIVERY_GATE.md](DELIVERY_GATE.md). Offline transcription now writes a pending SRT and validates it before replacing the final local output. Missing files, empty subtitles, bad numbering, invalid timestamps, overlaps, and cues past the recording duration all cause **BLOCKED**.
+
+To check a local subtitle artifact:
+
+```bash
+python delivery_gate.py "recording.wav" "recording.srt"
+```
+
+The gate outputs `OUTPUT_VALIDATED_NOT_YET_DELIVERED`: even a structurally valid file is **not** marked complete until its actual SRT attachment/link reaches the requester. Existing historical SRT files cannot be passed off as newly inferred offline results. Passing CI is code-only validation and never substitutes for delivering subtitles.
