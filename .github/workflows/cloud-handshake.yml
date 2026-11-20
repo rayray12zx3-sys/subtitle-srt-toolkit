@@ -21,6 +21,7 @@ on:
           - base
           - medium
           - large-v3
+          - large-v3-turbo
 permissions:
   contents: read
 jobs:
