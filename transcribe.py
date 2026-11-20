@@ -7,6 +7,7 @@ import argparse
 import os
 import re
 from pathlib import Path
+from delivery_gate import DeliveryBlocked, validate_delivery
 
 TERMINAL_PUNCT = "，。！？；：、,.!?;:"
 
@@ -137,12 +138,26 @@ def main():
 
     grouped = group_words(words, args.max_chars, args.max_seconds, args.max_gap)
     target = args.output or args.audio.with_suffix(".srt")
-    count = write_srt(
-        grouped, target, not args.keep_punctuation, converter=converter
-    )
-    print(f"Saved {target} ({count} subtitles; detected={info.language})")
+    if target.suffix.lower() != ".srt":
+        parser.error("Output must have the .srt extension")
+    pending = target.with_name(target.stem + ".pending.srt")
+    try:
+        count = write_srt(
+            grouped, pending, not args.keep_punctuation, converter=converter
+        )
+        report = validate_delivery(args.audio, pending)
+        if report["cues"] != count:
+            raise DeliveryBlocked("Subtitle count mismatch")
+        pending.replace(target)
+        report = validate_delivery(args.audio, target)
+    except Exception as exc:
+        pending.unlink(missing_ok=True)
+        raise SystemExit(f"BLOCKED: no validated new SRT deliverable: {exc}") from exc
+    print(f"OUTPUT_VALIDATED_NOT_YET_DELIVERED: {target}; "
+          f"{report['cues']} cues; detected={info.language}")
     print("OFFLINE: no inference service/API quota was used.")
-    print("ASR is not a verified verbatim transcript; audio review is still needed.")
+    print("Task remains INCOMPLETE until the SRT is actually delivered to the user.")
+    print("Manual word-for-word accuracy review is not established by this check.")
 
 
 if __name__ == "__main__":
