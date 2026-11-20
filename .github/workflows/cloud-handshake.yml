@@ -32,6 +32,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+      - name: Install FFmpeg for private audio normalization
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
       - name: Install offline inference packages
         run: |
           python -m pip install -r requirements.txt 'cryptography>=42,<48' huggingface_hub
