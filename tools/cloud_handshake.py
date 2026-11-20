@@ -62,7 +62,14 @@ def main():
     p.add_argument('--model',choices=list(MODEL_REPOS),default='large-v3-turbo')
     p.add_argument('--max-wait',type=int,default=1800)
     a=p.parse_args()
-    output_pub=serialization.load_der_public_key(base64.b64decode(a.output_pub,validate=True))
+    if a.output_pub.startswith('rsa-n:'):
+        encoded = a.output_pub[6:]
+        modulus_bytes = base64.urlsafe_b64decode(encoded + '=' * (-len(encoded) % 4))
+        if len(modulus_bytes) != 256:
+            raise ValueError("Invalid compact RSA modulus length")
+        output_pub = rsa.RSAPublicNumbers(65537, int.from_bytes(modulus_bytes, 'big')).public_key()
+    else:
+        output_pub=serialization.load_der_public_key(base64.b64decode(a.output_pub,validate=True))
     in_priv=rsa.generate_private_key(public_exponent=65537,key_size=2048)
     pub=in_priv.public_key().public_bytes(serialization.Encoding.DER,serialization.PublicFormat.SubjectPublicKeyInfo)
     print('SRT_INPUT_PUBLIC_KEY_B64='+base64.b64encode(pub).decode('ascii'),flush=True)
