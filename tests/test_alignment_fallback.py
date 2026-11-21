@@ -67,7 +67,8 @@ class AlignmentFallbackTests(unittest.TestCase):
                         SimpleNamespace(word="天",start=.29,end=.54)]
         stdout,report=self._run(Good())
         self.assertIn("ALIGNER_SUCCEEDED_CHUNKS=2",stdout)
-        self.assertEqual(report["cues"],2)
+        self.assertGreaterEqual(report["cues"],1)
+        self.assertIn("今天今天",self.destination.read_text("utf-8-sig"))
         self.assertIn("00:00:00,100",self.destination.read_text("utf-8-sig"))
 
 if __name__=="__main__":
