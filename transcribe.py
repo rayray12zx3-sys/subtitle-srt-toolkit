@@ -190,8 +190,9 @@ def main():
     except Exception as exc:
         pending.unlink(missing_ok=True)
         raise SystemExit(f"BLOCKED: no validated new SRT deliverable: {exc}") from exc
+    recognized = ",".join(detected_languages)
     print(f"OUTPUT_VALIDATED_NOT_YET_DELIVERED: {target}; "
-          f"{report['cues']} cues; detected={\",\".join(detected_languages)}")
+          f"{report['cues']} cues; detected={recognized}")
     print("OFFLINE: no inference service/API quota was used.")
     print("Task remains INCOMPLETE until the SRT is actually delivered to the user.")
     print("Manual word-for-word accuracy review is not established by this check.")
