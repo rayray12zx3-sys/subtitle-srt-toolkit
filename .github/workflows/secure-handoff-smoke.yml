@@ -1,0 +1,83 @@
+name: Secure chat-to-GitHub SRT E2E (synthetic media only)
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/secure-handoff-smoke.yml'
+permissions:
+  contents: read
+jobs:
+  real-cpu-crypto-inference:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install synthetic audio, private envelope, and offline Whisper
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg espeak-ng
+          python -m pip install -r requirements.txt 'cryptography>=42,<48' huggingface_hub
+      - name: Create only synthetic English speech and ephemeral caller/runner RSA keypairs
+        run: |
+          espeak-ng -v en-us -s 150 -w /tmp/synthetic_ask.wav 'Hello everyone this is a subtitle privacy verification test'
+          python -m tools.secure_exchange new-return-key --private-key /tmp/srt-caller.pem > /tmp/caller-pub.txt
+          python - <<'PY'
+          import base64
+          from pathlib import Path
+          from cryptography.hazmat.primitives.asymmetric import rsa
+          from cryptography.hazmat.primitives import serialization
+          private = rsa.generate_private_key(public_exponent=65537,key_size=2048)
+          Path('/tmp/runner.pem').write_bytes(private.private_bytes(
+              serialization.Encoding.PEM,serialization.PrivateFormat.PKCS8,
+              serialization.NoEncryption()))
+          public = private.public_key().public_bytes(
+              serialization.Encoding.DER,
+              serialization.PublicFormat.SubjectPublicKeyInfo)
+          Path('/tmp/runner-start.log').write_text(
+              'SRT_INPUT_PUBLIC_KEY_B64='+base64.b64encode(public).decode()+'\n')
+          PY
+      - name: Encrypt input with assistant helper and privately decrypt on simulated receiver
+        run: |
+          python -m tools.secure_exchange encrypt-input --audio /tmp/synthetic_ask.wav \
+            --runner-log /tmp/runner-start.log --cipher-out /tmp/only-ciphertext.bin
+          python - <<'PY'
+          from pathlib import Path
+          from cryptography.hazmat.primitives import serialization
+          from tools.secure_exchange import INPUT_AAD,open_envelope
+          key = serialization.load_pem_private_key(Path('/tmp/runner.pem').read_bytes(),password=None)
+          Path('/tmp/received.opus').write_bytes(
+              open_envelope(Path('/tmp/only-ciphertext.bin').read_bytes(), key, INPUT_AAD))
+          PY
+          ffmpeg -hide_banner -loglevel error -y -i /tmp/received.opus -ar 16000 -ac 1 /tmp/decoded.wav
+      - name: Download static tiny open-source weights and run actual CPU Whisper
+        run: |
+          python - <<'PY'
+          from huggingface_hub import snapshot_download
+          snapshot_download(repo_id='Systran/faster-whisper-tiny',local_dir='/tmp/local-tiny-model')
+          PY
+          HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 python transcribe.py \
+            /tmp/decoded.wav --model-dir /tmp/local-tiny-model --language en \
+            --device cpu --compute-type int8 --output /tmp/recognized.srt
+          python delivery_gate.py /tmp/decoded.wav /tmp/recognized.srt
+      - name: Encrypt model SRT into GitHub log-equivalent and validate chat-side decryption
+        run: |
+          python - <<'PY'
+          import contextlib
+          from pathlib import Path
+          from tools.secure_exchange import (
+              OUTPUT_AAD, parse_public_key, make_envelope, emit_encrypted_srt)
+          public = Path('/tmp/caller-pub.txt').read_text().split('PUBLIC_KEY_ONLY=',1)[1].splitlines()[0]
+          secret = Path('/tmp/recognized.srt').read_bytes()
+          with Path('/tmp/runner-finish.log').open('w') as logs, contextlib.redirect_stdout(logs):
+              emit_encrypted_srt(make_envelope(secret, parse_public_key(public), OUTPUT_AAD))
+          PY
+          python -m tools.secure_exchange finish --private-key /tmp/srt-caller.pem \
+            --job-log /tmp/runner-finish.log --original-audio /tmp/synthetic_ask.wav \
+            --output /tmp/chat_delivered.srt
+          python delivery_gate.py /tmp/synthetic_ask.wav /tmp/chat_delivered.srt
+          test -s /tmp/chat_delivered.srt
+          echo 'SYNTHETIC_REAL_CLOUD_CPU_WHISPER_ENCRYPTED_HANDOFF_PASS'
+          # No plaintext subtitle artifacts are uploaded to public GitHub.
