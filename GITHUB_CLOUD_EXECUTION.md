@@ -55,3 +55,10 @@ The [HANDOFF](HANDOFF.md) records the latest verified status and future improvem
 - GitHub code-only CI includes 30 synthetic tests including truncation, tampering and invalid SRT handling.
 
 **Remaining acceptance:** A completely new user-uploaded audio recording must travel through all the above connector actions **without further user copy/paste/manual relay**, return the real SRT in the *same chat*, and clean up temporary cloud objects. Only then mark `ONE-REQUEST_WORKFLOW_PASS`. Tool availability, connector authentication and UI permissions are not guaranteed by the repository; no false one-click claim.
+
+## Latest bounded synthetic CPU acceptance (2026-11-21)
+
+- [30 minutes of continuous synthetic speech, Whisper Tiny](https://github.com/rayray12zx3-sys/subtitle-srt-toolkit/actions/runs/44917558587) PASS: 1800s, 1591 cues, end 1799.98s, model compute stage 311.40s, 952,808KiB peak RSS. Validates 600s chunk offsets in a standard cloud runner, **not** Turbo 30m latency or correctness.
+- [Two synthetic clips, production Turbo, encrypted batch](https://github.com/rayray12zx3-sys/subtitle-srt-toolkit/actions/runs/44917772851) PASS: 19 cues, complete decrypt + strict validation for both clips. 8-file protocol maximum; 8-file inference runtime **NOT tested**.
+- `--language auto` works in code and synthetic English; Mandarin/English word-level correctness under automatic language detection remains unverified on a new private source.
+- Future full acceptance requires user source file(s), live connector access, no plaintext in public Github or public Drive, and delivery in current chat.

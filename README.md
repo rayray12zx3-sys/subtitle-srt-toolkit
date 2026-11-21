@@ -123,4 +123,12 @@ python -m tools.secure_exchange encrypt-batch --audio first.wav --audio second.m
 python -m tools.secure_exchange finish-batch --private-key /tmp/caller.pem --job-log /tmp/end.log --audio first.wav --audio second.m4a --output-dir /mnt/data/new-srt-batch
 ```
 
-Returned files are named `clip_0001.srt` and `clip_0002.srt` in input order. A failed clip blocks the whole delivery. The authorized caller still must upload encrypted-only bytes, initiate GitHub Actions and actually attach private SRTs in chat. **Synthetic-only until verified with real GitHub batch inference and a new private multi-audio request.**
+Returned files are named `clip_0001.srt` and `clip_0002.srt` in input order. A failed clip blocks the whole delivery. The authorized caller still must upload encrypted-only bytes, initiate GitHub Actions and actually attach private SRTs in chat. **Verified with actual GitHub-hosted Whisper inference on two synthetic audio clips** (Turbo and Tiny). This does **not** establish a new private multi-audio request's automatic delivery, nor an 8-source workload's completion within 100 minutes.
+
+## Length/automatic language/batch CPU verification
+
+[30m continuous synthetic speech test](https://github.com/rayray12zx3-sys/subtitle-srt-toolkit/actions/runs/44917558587) **PASS** on standard GitHub-hosted CPU with **Whisper Tiny**, 1,591 SRT cues, final timestamp 29:59.980, audio-processing command wall 311.40s and process memory peak 952,808 KiB. Synthetic 30m is not evidence of 30m private Turbo throughput or human-verified accuracy.
+
+[Encrypted two-source production Turbo model synthetic regression](https://github.com/rayray12zx3-sys/subtitle-srt-toolkit/actions/runs/44917772851) **PASS**, 19 validated SRT cues over 2 independent clips; [code-only CI](https://github.com/rayray12zx3-sys/subtitle-srt-toolkit/actions/runs/44917772932) **41/41 PASS**.
+
+Next true app integration gate: a **new private** 30m recording or multi-file upload must traverse authorized Google Drive temporary ciphertext, GitHub, SRT validation and actual chat attachment, without manual user relay. Until that happens, **automatic one-request delivery remains UNVERIFIED**.
