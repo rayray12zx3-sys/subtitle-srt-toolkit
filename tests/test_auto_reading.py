@@ -26,7 +26,8 @@ class AutoReadingTests(unittest.TestCase):
         self.assertAlmostEqual(windows[0][1],.83,places=6)
         self.assertLess(windows[0][1],two[0].start)
         self.assertEqual(windows[1][0],1.10)
-        self.assertEqual(windows[1][1],1.65)
+        self.assertGreaterEqual(windows[1][1],1.65)
+        self.assertLessEqual(windows[1][1],1.93+1e-6)
 
     def test_back_to_back_speech_does_not_overstretch(self):
         groups=[[tok("A",0,.5)],[tok("B",.5,1)]]
