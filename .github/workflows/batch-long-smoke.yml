@@ -74,6 +74,17 @@ jobs:
                   assert all(line.strip() for line in lines)
                   assert all(visual_width(line)<=26 for line in lines), 'subtitle exceeded line width tolerance'
                   multiline+=len(lines)==2
+          from tools.subtitle_quality import analyze_srt
+          rate_warnings=0
+          short_warnings=0
+          for path in sorted(out.glob('*.srt')):
+              metrics=analyze_srt(path,line_chars=12,max_lines=2,rate_limit=8.0)
+              assert metrics['layout_ok'], 'Auto layout exceeded visible limits'
+              rate_warnings+=metrics['reading_too_fast']
+              short_warnings+=metrics['too_brief']
+          print('SMART_V2_AGGREGATE_FAST_CUES='+str(rate_warnings))
+          print('SMART_V2_AGGREGATE_SHORT_CUES='+str(short_warnings))
+          print('SMART_V2_NONDESTRUCTIVE_QA_PASS')
           print('SMART_AUTOMATIC_TWO_LINE_LAYOUT_PASS')
           print('SMART_AUTOMATIC_TWO_LINE_CUES='+str(multiline))
           print('GITHUB_CPU_REAL_WHISPER_PRIVATE_BATCH_WITH_CHUNKS_PASS')
