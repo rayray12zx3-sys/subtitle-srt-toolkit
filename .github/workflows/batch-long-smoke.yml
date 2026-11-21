@@ -61,6 +61,21 @@ jobs:
           assert all(x['cues']>=2 for x in checks)
           assert all(x['last_cue_seconds']>5 for x in checks)
           assert len(list(out.glob('*.srt')))==2
+          import re
+          from tools.smart_segmentation import visual_width
+          from delivery_gate import validate_delivery
+          multiline=0
+          for path,original in zip(sorted(out.glob('*.srt')),sources):
+              validated=validate_delivery(original,path)
+              assert validated['cues']>=2
+              for block in re.split(r'\\n\\s*\\n',path.read_text('utf-8-sig').strip()):
+                  lines=block.splitlines()[2:]
+                  assert 1<=len(lines)<=2, ('not 1-2 lines',len(lines))
+                  assert all(line.strip() for line in lines)
+                  assert all(visual_width(line)<=26 for line in lines), 'subtitle exceeded line width tolerance'
+                  multiline+=len(lines)==2
+          print('SMART_AUTOMATIC_TWO_LINE_LAYOUT_PASS')
+          print('SMART_AUTOMATIC_TWO_LINE_CUES='+str(multiline))
           print('GITHUB_CPU_REAL_WHISPER_PRIVATE_BATCH_WITH_CHUNKS_PASS')
           print('BATCH_SYNTHETIC_CUES='+str(sum(x['cues'] for x in checks)))
           print('BATCH_SYNTHETIC_LONGEST_END_SEC='+str(max(x['last_cue_seconds'] for x in checks)))
