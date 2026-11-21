@@ -23,7 +23,7 @@ class AutoReadingTests(unittest.TestCase):
         two=[tok("英文",1.10,1.65)]
         windows=cue_windows([one,two],audio_end=2.0)
         self.assertEqual(windows[0][0],.15)
-        self.assertLessEqual(windows[0][1],.83)
+        self.assertAlmostEqual(windows[0][1],.83,places=6)
         self.assertLess(windows[0][1],two[0].start)
         self.assertEqual(windows[1][0],1.10)
         self.assertEqual(windows[1][1],1.65)
@@ -40,11 +40,10 @@ class AutoReadingTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             srt=Path(d)/"test.srt"
             srt.write_text(
-                "1\\n00:00:00,000 --> 00:00:00,350\\n這是一個非常快速的中文句子\\n\\n"
-                "2\\n00:00:00,400 --> 00:00:01,400\\nHello everyone\\n",
+                "1\n00:00:00,000 --> 00:00:00,350\n這是一個非常快速的中文句子\n\n"
+                "2\n00:00:00,400 --> 00:00:01,400\nHello everyone\n",
                 encoding="utf-8"
             )
-            srt.write_text(srt.read_text().replace("\\\\n","\\n"))
             report=analyze_srt(srt,12,2,8.)
             self.assertEqual(report["cues"],2)
             self.assertGreaterEqual(report["reading_too_fast"],1)
