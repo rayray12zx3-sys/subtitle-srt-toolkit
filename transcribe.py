@@ -70,11 +70,17 @@ def group_words(words, max_chars: int, max_duration: float, gap: float):
     return groups
 
 
-def write_srt(groups, output: Path, minimal_punctuation: bool, converter=None):
+def write_srt(groups, output: Path, minimal_punctuation: bool, converter=None,
+              line_chars=None, max_lines=2):
     """Write subtitle text only on the local filesystem."""
     parts = []
     for group in groups:
-        content = clean_text("".join(x.word for x in group), minimal_punctuation)
+        if line_chars:
+            from tools.smart_segmentation import break_lines
+            lines = break_lines(group, line_chars, max_lines)
+            content = "\n".join(clean_text(line, minimal_punctuation) for line in lines)
+        else:
+            content = clean_text("".join(x.word for x in group), minimal_punctuation)
         if converter is not None:
             content = converter(content)
         if content:
@@ -108,6 +114,11 @@ def main():
     parser.add_argument("--device", default="auto", choices=["auto", "cpu", "cuda"])
     parser.add_argument("--compute-type", default="default")
     parser.add_argument("--max-chars", type=int, default=22)
+    parser.add_argument("--segmentation", choices=["smart", "basic"], default="smart",
+                        help="Fully automatic semantic + pause segmentation; basic for legacy")
+    parser.add_argument("--line-chars", type=int, default=12,
+                        help="Approximate Chinese characters per subtitle line")
+    parser.add_argument("--max-lines", type=int, choices=[1, 2], default=2)
     parser.add_argument("--max-seconds", type=float, default=4.0)
     parser.add_argument("--max-gap", type=float, default=0.45)
     parser.add_argument("--keep-punctuation", action="store_true")
@@ -121,6 +132,8 @@ def main():
         raise SystemExit(f"BLOCKED: {exc}") from exc
     if args.chunk_seconds < 0 or args.chunk_seconds == 1 or args.chunk_seconds > 3600:
         raise SystemExit("BLOCKED: --chunk-seconds must be 0 or between 2 and 3600")
+    if args.line_chars < 1:
+        raise SystemExit("BLOCKED: --line-chars must be positive")
     if args.max_chars < 1 or args.max_seconds <= 0 or args.max_gap < 0:
         raise SystemExit("BLOCKED: Invalid subtitle size/timing limits")
 
@@ -173,14 +186,21 @@ def main():
     if not words:
         raise SystemExit("BLOCKED: No recognized speech; SRT not written")
 
-    grouped = group_words(words, args.max_chars, args.max_seconds, args.max_gap)
+    if args.segmentation == "smart":
+        from tools.smart_segmentation import segment_words
+        grouped = segment_words(words, args.max_chars, args.max_seconds, args.max_gap,
+                                args.line_chars, args.max_lines)
+    else:
+        grouped = group_words(words, args.max_chars, args.max_seconds, args.max_gap)
     target = args.output or args.audio.with_suffix(".srt")
     if target.suffix.lower() != ".srt":
         raise SystemExit("BLOCKED: Output must have the .srt extension")
     pending = target.with_name(target.stem + ".pending.srt")
     try:
         count = write_srt(
-            grouped, pending, not args.keep_punctuation, converter=converter
+            grouped, pending, not args.keep_punctuation, converter=converter,
+            line_chars=args.line_chars if args.segmentation == "smart" else None,
+            max_lines=args.max_lines
         )
         report = validate_delivery(args.audio, pending)
         if report["cues"] != count:

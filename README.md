@@ -132,3 +132,11 @@ Returned files are named `clip_0001.srt` and `clip_0002.srt` in input order. A f
 [Encrypted two-source production Turbo model synthetic regression](https://github.com/rayray12zx3-sys/subtitle-srt-toolkit/actions/runs/44917772851) **PASS**, 19 validated SRT cues over 2 independent clips; [code-only CI](https://github.com/rayray12zx3-sys/subtitle-srt-toolkit/actions/runs/44917772932) **41/41 PASS**.
 
 Next true app integration gate: a **new private** 30m recording or multi-file upload must traverse authorized Google Drive temporary ciphertext, GitHub, SRT validation and actual chat attachment, without manual user relay. Until that happens, **automatic one-request delivery remains UNVERIFIED**.
+
+## Fully automatic semantic subtitle segmentation (2026-11-22)
+
+**Default mode is now `--segmentation smart`, no manual proofreading or manual splitting step.** The CPU-only algorithm uses the punctuation retained from Whisper recognition, pauses, common Chinese/English clause markers, grammatical continuation penalties, subtitle duration, and display width. It globally chooses the best word-token boundaries instead of cutting blindly at exactly N characters.
+
+Example: `python transcribe.py source.wav --model-dir /tmp/whisper-weights --traditional --segmentation smart --max-chars 22 --line-chars 12 --max-lines 2 --max-seconds 4 --output subtitles.srt`. The same behavior applies by default to GitHub cloud and encrypted batches. `--segmentation basic` restores the earlier mechanical rules if needed.
+
+**Limits:** no paid inference API, no extra model download, no manual approval required; punctuation and word-time estimates come from Whisper and may be mistaken. The method is *heuristic semantics*, not full language-model comprehension; one ASR token may contain several Chinese characters, and it will never invent individual character timestamps. Avoid claiming word-perfect transcription or exact timestamp accuracy without independent evidence.
