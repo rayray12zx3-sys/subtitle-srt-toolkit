@@ -56,3 +56,51 @@ The GitHub-hosted production SRT default is now **Large-v3 Turbo**, validated wi
 Additional real private recording trials now include Breeze-ASR-25 (**33 cues**) and FireRedASR2-AED (**24 cues**, actual [GitHub production run 44752794627](https://github.com/rayray12zx3-sys/subtitle-srt-toolkit/actions/runs/44752794627)) alongside Turbo (**31 cues**) and Small (**32 cues**). Private SRT outputs were encrypted, structurally validated, delivered to chat, and kept in an owner-only Google Drive evaluation folder, **never published in this repository**.
 
 The production default remains **Large-v3 Turbo**, Small fallback, Qwen3-ASR 0.6B optional private-text cross-check. Models are NOT ranked by genuine CER/WER: only cross-recognizer string similarity was measured, without human verified truth. FireRed had greater inference cost and no demonstrated accuracy advantage for this test. See [MODEL_EVALUATION.md](MODEL_EVALUATION.md) for aggregate evidence.
+
+## Next stage: reusable secure chat-to-GitHub client (2026-11-21)
+
+The previous manual RSA/AES-GCM media handoff is now packaged as
+[`tools/secure_exchange.py`](tools/secure_exchange.py), with offline synthetic
+integration tests. It is an **assistant cloud-session helper**, NOT a command
+to run on the user's Windows PC. All inference still runs on the GitHub-hosted
+CPU runner.
+
+**Three assistant-side helpers:**
+
+```text
+# 1) Prepare caller-owned private return key in an ephemeral assistant cloud directory
+python -m tools.secure_exchange new-return-key --private-key /tmp/srt_private.pem
+
+# 2) After the authorized assistant dispatches Actions and obtains the runner's
+# public key from its live job logs:
+python -m tools.secure_exchange encrypt-input --audio INPUT.wav --runner-log /tmp/job-start.log --cipher-out /tmp/encrypted_input.bin
+
+# 3) After updating the short-lived ciphertext-only Drive object, and the runner
+# reports encrypted SRT ciphertext:
+python -m tools.secure_exchange finish --private-key /tmp/srt_private.pem --job-log /tmp/job-finish.log --original-audio INPUT.wav --output /mnt/data/new_subtitles.srt
+```
+
+`new-return-key` prints only the 348-character compact RSA **public** key
+to pass into workflow_dispatch. The corresponding private key stays exclusively
+in the assistant's short-lived workspace. `encrypt-input` compresses the
+private recording locally in that **assistant cloud workspace** to 48-kbps Opus
+and writes AES-256-GCM+RSA-OAEP ciphertext. Never upload plaintext to a public
+GitHub repo or to the temporary public-read blob. `finish` reconstructs
+chunked ciphertext (even for longer subtitles), authenticates it and validates
+SRT against the original audio before writing the result, without printing the
+subtitle text into public logs. The caller must then **actually attach** the
+validated SRT in chat and delete both temporary ciphertext storage and
+ephemeral private key.
+
+**What remains manual/connector-dependent:** the authorized assistant must
+create/share the temporary encrypted Google Drive file, dispatch GitHub Actions,
+obtain the runner's public key, update the encrypted Drive file, and receive
+job logs using connected authenticated tools. Neither a connector's login,
+permission prompts, temporary file creation, workflow dispatch, nor chat
+attachment delivery can be guaranteed by Python code alone. This is **not
+a verified one-click flow**. Reusable helper + CI proves the crypto handoff,
+not future end-to-end autonomous delivery or word-for-word accuracy.
+
+The default model remains Large-v3 Turbo; no paid or quota-limited AI
+inference is used. Open-source dependencies and GitHub's normal usage
+limits still apply.

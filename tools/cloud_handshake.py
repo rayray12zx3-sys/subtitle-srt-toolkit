@@ -16,6 +16,7 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from huggingface_hub import snapshot_download
 from model_catalog import MODEL_REPOS, get_model_repo
+from tools.secure_exchange import emit_encrypted_srt
 
 
 MAGIC = b'SRT2'
@@ -48,7 +49,9 @@ def fetch_public_drive_blob(file_id):
                 host = urlsplit(resp.geturl()).hostname or ''
                 if not (host.endswith('.googleusercontent.com') or host.endswith('.google.com')):
                     continue
-                blob=resp.read(1_000_000)
+                blob=resp.read(64 * 1024 * 1024 + 1)
+                if len(blob) > 64 * 1024 * 1024:
+                    raise ValueError('Encrypted audio exceeds maximum allowed size')
             if blob.startswith(MAGIC):
                 return blob
         except Exception:
@@ -111,7 +114,7 @@ def main():
         report=validate_delivery(audio,srt)
         if report['status'] != 'OUTPUT_VALIDATED_NOT_YET_DELIVERED':
             raise SystemExit('BLOCKED: Invalid SRT')
-        print('SRT_OUTPUT_CIPHER_B64='+base64.b64encode(pack(srt.read_bytes(),output_pub,OUTPUT_AAD)).decode('ascii'),flush=True)
+        emit_encrypted_srt(pack(srt.read_bytes(),output_pub,OUTPUT_AAD))
         print('SRT_VALIDATED_CUES='+str(report['cues']),flush=True)
         print('SRT_MODEL_ID='+a.model,flush=True)
         print(f'SRT_MODEL_DOWNLOAD_SECONDS={download_sec:.2f}',flush=True)

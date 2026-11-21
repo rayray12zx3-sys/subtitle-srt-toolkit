@@ -237,3 +237,12 @@ __marimo__/
 *.sbv
 *.jsonl
 models/
+
+# Cloud handoff privacy: never commit raw or encrypted session files
+*.pem
+*.key
+*.bin
+*.opus
+*.cipher
+*.ciphertext
+.private/
