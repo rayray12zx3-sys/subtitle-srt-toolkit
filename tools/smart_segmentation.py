@@ -80,6 +80,41 @@ def _boundary_penalty(left, right, gap: float) -> float:
     return score
 
 
+
+def reading_units(text: str) -> float:
+    """Estimated reading load, not a linguistic proof or human reading rate.
+
+    One Han character ~= 1 unit. An English word is 1.0..2.1 units
+    (rather than counting its letters like Chinese glyphs). Numbers and
+    spoken punctuation also count modestly; spaces do not.
+    """
+    parts = re.findall(r"[A-Za-z]+(?:['’-][A-Za-z]+)*|\d+(?:[.,]\d+)*|[^\W\d_]|[^\s]",text,re.UNICODE)
+    load = 0.0
+    for part in parts:
+        if re.fullmatch(r"[A-Za-z]+(?:['’-][A-Za-z]+)*",part):
+            load += min(2.15, 0.85 + 0.18 * len(part))
+        elif part[0].isdigit():
+            load += min(2.1, 0.95 + 0.2 * len(part))
+        elif part in PUNCT or unicodedata.category(part[0]).startswith("P"):
+            load += 0.15
+        elif not part.isspace():
+            load += 1.0
+    return load
+
+
+def reading_rate(words) -> float:
+    if not words:
+        return 0.
+    return reading_units(_text(words))/max(.25, words[-1].end-words[0].start)
+
+
+def _rate_penalty(text: str, duration: float, target: float=5.7,
+                  soft_limit: float=7.5) -> float:
+    """Keep subtitles readable within the natural audio timing where possible."""
+    rate = reading_units(text) / max(0.25, duration)
+    return (max(0.0, rate-target)**2 * .30 +
+            max(0.0, rate-soft_limit)**2 * 1.5)
+
 def _boundaries(words, max_chars: int, max_seconds: float,
                 max_gap: float, line_chars: int, max_lines: int):
     """Dynamic programming: globally choose minimal-cost ASR-token boundaries."""
@@ -116,9 +151,10 @@ def _boundaries(words, max_chars: int, max_seconds: float,
             overflow = max(0., dur - max_seconds) * 8.
             # Favor durations around 2-3 seconds without overriding clauses.
             tempo = abs(dur - 2.5) * .35
+            readability = _rate_penalty(text, dur)
             if j == n and dur < .8:
                 short *= .4  # do not force unnatural last-line splitting
-            cost = 2.2 + short + too_wide + overflow + tempo + end_cost + dp[j]
+            cost = 2.2 + short + too_wide + overflow + tempo + readability + end_cost + dp[j]
             if cost < dp[i]:
                 dp[i], nxt[i] = cost, j
     groups = []

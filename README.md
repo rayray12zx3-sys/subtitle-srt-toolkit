@@ -146,3 +146,17 @@ Example: `python transcribe.py source.wav --model-dir /tmp/whisper-weights --tra
 [GitHub Turbo real-inference synthetic test](https://github.com/rayray12zx3-sys/subtitle-srt-toolkit/actions/runs/44927008739) **PASS**, 2 different clips -> 10 SRT cues, of which **8 are automatically two-line**; encrypted send/return, audio-bounded timecodes and approximate max-line width passed. [50/50 code-only tests](https://github.com/rayray12zx3-sys/subtitle-srt-toolkit/actions/runs/44926858655) PASS.
 
 No manual sentence splitting or waveform editor is required. The fully automatic method is heuristic semantics (ASR punctuation, pauses, clause markers, readability), not a promise of 100% correct transcription, perfect semantics, exact per-Chinese-character timestamps or formal superiority to Subtitle Edit.
+
+## Semantic segmentation 2.0 — automatic reading-speed handling (2026-11-22)
+
+Default smart mode now penalizes excessively fast reading load in the global
+subtitle-boundary optimization, distinguishing CJK characters and English words.
+It gently extends very short subtitles **only into available silence** (up to
+280 ms; never starts early or overlaps the following utterance). No manual
+editing or external AI inference API is required.
+
+`tools/subtitle_quality.py` reports aggregate, non-transcript metrics (fast
+readability, very short cues, line count, width). For genuinely fast speech, an
+over-speed warning is unavoidable without inventing slower speech or discarding
+words. The validator preserves original recognized text and will not claim
+perfectly readable captions in such cases. No blanket accuracy guarantee.

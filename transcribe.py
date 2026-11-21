@@ -71,10 +71,15 @@ def group_words(words, max_chars: int, max_duration: float, gap: float):
 
 
 def write_srt(groups, output: Path, minimal_punctuation: bool, converter=None,
-              line_chars=None, max_lines=2):
+              line_chars=None, max_lines=2, optimize_timing=False):
     """Write subtitle text only on the local filesystem."""
     parts = []
-    for group in groups:
+    if optimize_timing:
+        from tools.subtitle_timing import cue_windows
+        windows = cue_windows(groups)
+    else:
+        windows = [(g[0].start, g[-1].end) for g in groups]
+    for group, (begin, end) in zip(groups, windows):
         if line_chars:
             from tools.smart_segmentation import break_lines
             lines = break_lines(group, line_chars, max_lines)
@@ -86,7 +91,7 @@ def write_srt(groups, output: Path, minimal_punctuation: bool, converter=None,
         if content:
             parts.append(
                 f"{len(parts) + 1}\n"
-                f"{srt_time(group[0].start)} --> {srt_time(group[-1].end)}\n"
+                f"{srt_time(begin)} --> {srt_time(end)}\n"
                 f"{content}\n"
             )
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -119,6 +124,8 @@ def main():
     parser.add_argument("--line-chars", type=int, default=12,
                         help="Approximate Chinese characters per subtitle line")
     parser.add_argument("--max-lines", type=int, choices=[1, 2], default=2)
+    parser.add_argument("--reading-rate", type=float, default=8.0,
+                        help="Auto quality warning threshold in weighted reading units/second")
     parser.add_argument("--max-seconds", type=float, default=4.0)
     parser.add_argument("--max-gap", type=float, default=0.45)
     parser.add_argument("--keep-punctuation", action="store_true")
@@ -132,6 +139,8 @@ def main():
         raise SystemExit(f"BLOCKED: {exc}") from exc
     if args.chunk_seconds < 0 or args.chunk_seconds == 1 or args.chunk_seconds > 3600:
         raise SystemExit("BLOCKED: --chunk-seconds must be 0 or between 2 and 3600")
+    if args.reading_rate <= 0:
+        raise SystemExit("BLOCKED: --reading-rate must be positive")
     if args.line_chars < 1:
         raise SystemExit("BLOCKED: --line-chars must be positive")
     if args.max_chars < 1 or args.max_seconds <= 0 or args.max_gap < 0:
@@ -200,13 +209,21 @@ def main():
         count = write_srt(
             grouped, pending, not args.keep_punctuation, converter=converter,
             line_chars=args.line_chars if args.segmentation == "smart" else None,
-            max_lines=args.max_lines
+            max_lines=args.max_lines,
+            optimize_timing=args.segmentation == "smart"
         )
         report = validate_delivery(args.audio, pending)
         if report["cues"] != count:
             raise DeliveryBlocked("Subtitle count mismatch")
         pending.replace(target)
         report = validate_delivery(args.audio, target)
+        if args.segmentation == "smart":
+            from tools.subtitle_quality import analyze_srt
+            quality=analyze_srt(target,args.line_chars,args.max_lines,args.reading_rate)
+            if not quality["layout_ok"]:
+                print("AUTO_LAYOUT_WARNING: unbreakable ASR token/layout exceeded capacity")
+            print(f"AUTO_QA_CUES={quality['cues']} AUTO_QA_FAST={quality['reading_too_fast']} "
+                  f"AUTO_QA_SHORT={quality['too_brief']} AUTO_QA_MAX_RATE={quality['high_rate']:.2f}")
     except Exception as exc:
         pending.unlink(missing_ok=True)
         raise SystemExit(f"BLOCKED: no validated new SRT deliverable: {exc}") from exc
