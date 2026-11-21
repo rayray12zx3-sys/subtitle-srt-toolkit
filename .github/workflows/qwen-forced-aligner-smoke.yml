@@ -1,0 +1,70 @@
+name: Qwen forced-aligner CPU feasibility (synthetic only)
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/qwen-forced-aligner-smoke.yml'
+permissions:
+  contents: read
+jobs:
+  aligner-synthetic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install CPU Torch and offline-compatible Transformers native aligner
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq espeak-ng ffmpeg
+          python -m pip install 'torch==2.8.0' --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install 'transformers>=5.13.0,<6' 'soundfile>=0.12' librosa sentencepiece
+      - name: Generate a synthetic spoken-English recording
+        run: |
+          espeak-ng -v en-us -s 135 -w /tmp/aligner-sample.wav 'Today we will practice our English pronunciation together.'
+          ffmpeg -hide_banner -loglevel error -y -i /tmp/aligner-sample.wav -ac 1 -ar 16000 /tmp/aligner-16k.wav
+      - name: CPU-only official Qwen3 ForcedAligner inference, no private transcript
+        env:
+          HF_HUB_DISABLE_TELEMETRY: '1'
+        run: |
+          /usr/bin/time -f 'QWEN_ALIGNER_PROCESS_WALL_SEC=%e QWEN_ALIGNER_PEAK_RSS_KB=%M' python - <<'PY'
+          import math,time
+          import torch
+          from transformers import AutoProcessor, AutoModelForTokenClassification
+          torch.set_num_threads(4)
+          repo='Qwen/Qwen3-ForcedAligner-0.6B-hf'
+          start=time.monotonic()
+          processor=AutoProcessor.from_pretrained(repo)
+          model=AutoModelForTokenClassification.from_pretrained(
+              repo, dtype=torch.float32).to('cpu').eval()
+          print('QWEN_ALIGNER_LOAD_SECONDS=%.2f'%(time.monotonic()-start),flush=True)
+          start=time.monotonic()
+          data,word_lists=processor.prepare_forced_aligner_inputs(
+              audio='/tmp/aligner-16k.wav',
+              transcript='Today we will practice our English pronunciation together.',
+              language='English',
+          )
+          data=data.to('cpu',torch.float32)
+          with torch.inference_mode():
+              output=model(**data)
+          timestamps=processor.decode_forced_alignment(
+              logits=output.logits,
+              input_ids=data['input_ids'],
+              word_lists=word_lists,
+              timestamp_token_id=model.config.timestamp_token_id,
+          )[0]
+          elapsed=time.monotonic()-start
+          assert timestamps and len(timestamps)>=5
+          prev=-1.
+          for w in timestamps:
+              a=float(w['start_time']);b=float(w['end_time'])
+              assert math.isfinite(a) and math.isfinite(b) and 0<=a<=b<=30.
+              assert a>=prev-.2, 'Out-of-order word alignment'
+              prev=max(prev,b)
+          print('QWEN_ALIGNER_CPU_SYNTHETIC_PASS',flush=True)
+          print('QWEN_ALIGNER_TOKENS='+str(len(timestamps)),flush=True)
+          print('QWEN_ALIGNER_INFERENCE_SECONDS=%.2f'%elapsed,flush=True)
+          print('SYNTHETIC_ONLY; NO PRIVATE AUDIO OR REAL-TRANSCRIPT CORRECTNESS VERIFIED',flush=True)
+          PY
