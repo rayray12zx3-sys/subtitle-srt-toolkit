@@ -51,7 +51,7 @@ The [HANDOFF](HANDOFF.md) records the latest verified status and future improvem
 **Verification gates:**
 - [Production proof, earlier real user recording](https://github.com/rayray12zx3-sys/subtitle-srt-toolkit/actions/runs/44727437501): Whisper Turbo validated new private SRT.
 - [Encrypted handoff real-inference synthetic rehearsal](https://github.com/rayray12zx3-sys/subtitle-srt-toolkit/actions/runs/44915065345): CPU real Whisper, private envelope and SRT validator.
-- [Strict runner/client interoperability rehearsal](https://github.com/rayray12zx3-sys/subtitle-srt-toolkit/actions/runs/44915193779): use actual `cloud_handshake.pack/unpack` with assistant `secure_exchange`; check final GitHub status before claiming PASS.
+- [Strict runner/client interoperability rehearsal](https://github.com/rayray12zx3-sys/subtitle-srt-toolkit/actions/runs/44915193779): use actual `cloud_handshake.pack/unpack` with assistant `secure_exchange`; **PASS**, result confirmed; actual runner `pack/unpack` and assistant helper successfully exchanged an encrypted synthetic voice recording and generated an authenticated 3-cue SRT.
 - GitHub code-only CI includes 30 synthetic tests including truncation, tampering and invalid SRT handling.
 
 **Remaining acceptance:** A completely new user-uploaded audio recording must travel through all the above connector actions **without further user copy/paste/manual relay**, return the real SRT in the *same chat*, and clean up temporary cloud objects. Only then mark `ONE-REQUEST_WORKFLOW_PASS`. Tool availability, connector authentication and UI permissions are not guaranteed by the repository; no false one-click claim.
