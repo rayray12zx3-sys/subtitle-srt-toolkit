@@ -93,3 +93,39 @@ jobs:
           print('QWEN_ALIGNER_INFERENCE_SECONDS=%.2f'%elapsed,flush=True)
           print('SYNTHETIC_ONLY; NO PRIVATE AUDIO OR REAL-TRANSCRIPT CORRECTNESS VERIFIED',flush=True)
           PY
+      - name: Run real Turbo plus native Qwen alignment on GitHub CPU
+        run: |
+          python -m pip install -r requirements.txt
+          python - <<'PY'
+          from pathlib import Path
+          from huggingface_hub import snapshot_download
+          snapshot_download(repo_id='deepdml/faster-whisper-large-v3-turbo-ct2',
+                            local_dir='/tmp/turbo-weights')
+          qwen=snapshot_download(repo_id='Qwen/Qwen3-ForcedAligner-0.6B-hf')
+          Path('/tmp/qwen-path.txt').write_text(qwen)
+          PY
+          python - <<'PY'
+          import subprocess,sys,re
+          from pathlib import Path
+          from delivery_gate import validate_delivery
+          qwen=Path('/tmp/qwen-path.txt').read_text().strip()
+          examples=[('/tmp/aligner-16k.wav','en','/tmp/en-aligned.srt'),
+                    ('/tmp/aligner-zh16k.wav','zh','/tmp/zh-aligned.srt')]
+          successes=0
+          for audio,language,srt in examples:
+              command=[sys.executable,'transcribe.py',audio,'--model-dir',
+                       '/tmp/turbo-weights','--device','cpu','--compute-type','int8',
+                       '--language',language,'--chunk-seconds','240','--traditional',
+                       '--aligner-dir',qwen,'--output',srt]
+              completed=subprocess.run(command,check=True,capture_output=True,text=True)
+              valid=validate_delivery(Path(audio),Path(srt))
+              assert valid['cues']>=1,valid['cues']
+              found=re.search(r'ALIGNER_SUCCEEDED_CHUNKS=(\d+)',completed.stdout)
+              assert found, 'No alignment status emitted'
+              successes+=int(found.group(1))
+              print('TURBO_QWEN_SYNTHETIC_LANGUAGE_'+language+'_CUES='+str(valid['cues']))
+          assert successes>=1,'No successful aligned transcript among synthetic fixtures'
+          print('TURBO_QWEN_SYNTHETIC_ALIGNMENT_PASS')
+          print('TURBO_QWEN_ALIGNED_CHUNKS='+str(successes))
+          print('SYNTHETIC_ONLY; NO VERIFIED WORD ERROR RATE OR REAL AUDIO DELIVERY')
+          PY
