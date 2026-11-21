@@ -1,4 +1,4 @@
-name: Cloud long-audio mixed-language and encrypted batch smoke (synthetic)
+name: Cloud chunked auto-language encrypted batch smoke (synthetic)
 on:
   workflow_dispatch:
   push:
@@ -47,7 +47,7 @@ jobs:
           assert len(ciphertext)<64*1024*1024
           log=io.StringIO()
           args=['cloud_handshake.py','--drive-id','1234567890123456789012',
-                '--output-pub',return_public,'--model','tiny',
+                '--output-pub',return_public,'--model','large-v3-turbo',
                 '--language','auto','--chunk-seconds','5']
           with patch.object(sys,'argv',args), patch.object(
               worker,'fetch_public_drive_blob',return_value=ciphertext), patch.object(
