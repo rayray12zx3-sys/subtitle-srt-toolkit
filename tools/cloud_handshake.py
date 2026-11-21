@@ -64,6 +64,7 @@ def main():
     p.add_argument('--drive-id',required=True)
     p.add_argument('--output-pub',required=True)
     p.add_argument('--model',choices=list(MODEL_REPOS),default='large-v3-turbo')
+    p.add_argument('--alignment',choices=['off','qwen'],default='off')
     p.add_argument('--language',choices=['auto','zh','en'],default='auto')
     p.add_argument('--chunk-seconds',type=int,default=600)
     p.add_argument('--max-wait',type=int,default=1800)
@@ -109,6 +110,11 @@ def main():
         else:
             snapshot_download(repo_id=get_model_repo(a.model),local_dir=str(model))
             actual_model_dir = model
+        aligner_dir=None
+        if a.alignment=='qwen':
+            aligner_dir=root/'qwen3-aligner'
+            snapshot_download(repo_id='Qwen/Qwen3-ForcedAligner-0.6B-hf',
+                              local_dir=str(aligner_dir))
         download_sec = time.monotonic() - model_start
         asr_start = time.monotonic()
         env={**os.environ,'HF_HUB_OFFLINE':'1','TRANSFORMERS_OFFLINE':'1','HF_HUB_DISABLE_TELEMETRY':'1'}
@@ -128,12 +134,14 @@ def main():
                             '-i',str(source),'-ar','16000','-ac','1','-c:a','pcm_s16le',
                             str(audio)],check=True,stdout=subprocess.DEVNULL)
             source.unlink(missing_ok=True)
-            subprocess.run([sys.executable,str(Path(__file__).resolve().parents[1]/'transcribe.py'),
-                            str(audio),'--model-dir',str(actual_model_dir),'--device','cpu',
-                            '--compute-type','int8','--language',a.language,
-                            '--chunk-seconds',str(a.chunk_seconds),
-                            '--traditional','--output',str(srt)],
-                           env=env,check=True,stdout=subprocess.DEVNULL)
+            command=[sys.executable,str(Path(__file__).resolve().parents[1]/'transcribe.py'),
+                     str(audio),'--model-dir',str(actual_model_dir),'--device','cpu',
+                     '--compute-type','int8','--language',a.language,
+                     '--chunk-seconds',str(a.chunk_seconds),
+                     '--traditional','--output',str(srt)]
+            if aligner_dir is not None:
+                command.extend(['--aligner-dir',str(aligner_dir)])
+            subprocess.run(command,env=env,check=True,stdout=subprocess.DEVNULL)
             report=validate_delivery(audio,srt)
             if report['status']!='OUTPUT_VALIDATED_NOT_YET_DELIVERED':
                 raise SystemExit('BLOCKED: Invalid SRT in batch')
@@ -152,6 +160,7 @@ def main():
         print('SRT_AUTO_QA_SHORT_CUES='+str(qa_short),flush=True)
         print('SRT_AUTO_QA_LAYOUT_WARNINGS='+str(qa_layout_warnings),flush=True)
         print('SRT_MODEL_ID='+a.model,flush=True)
+        print('SRT_ALIGNMENT_MODE='+a.alignment,flush=True)
         print(f'SRT_MODEL_DOWNLOAD_SECONDS={download_sec:.2f}',flush=True)
         print(f'SRT_ASR_GENERATION_SECONDS={asr_sec:.2f}',flush=True)
         print('OUTPUT_VALIDATED_NOT_YET_DELIVERED',flush=True)

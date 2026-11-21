@@ -112,6 +112,8 @@ def main():
     )
     parser.add_argument("--language", default=None,
                         help="BCP language code, or auto to detect language per chunk")
+    parser.add_argument("--aligner-dir", type=Path, default=None,
+                        help="Optional pre-downloaded official Qwen3 aligner; never auto-download")
     parser.add_argument("--chunk-seconds", type=int, default=0,
                         help="Split normalized mono 16-bit PCM WAV into bounded segments; 0 disables")
     parser.add_argument("--traditional", action="store_true",
@@ -161,13 +163,22 @@ def main():
         str(model_dir), device=args.device, compute_type=args.compute_type
     )
     language = None if args.language in (None, "auto") else args.language
+    aligner = None
+    alignment_attempted=0
+    alignment_succeeded=0
+    if args.aligner_dir is not None:
+        from tools.qwen_forced_alignment import QwenCPUAligner
+        aligner=QwenCPUAligner(args.aligner_dir)
     words = []
     detected_languages = []
-    if args.chunk_seconds:
+    # Qwen's documented 5-minute maximum requires at most 240-second
+    # speech chunks; don't silently attempt a 600-second alignment.
+    effective_chunk=min(args.chunk_seconds or 240,240) if aligner else args.chunk_seconds
+    if effective_chunk:
         from tools.chunking import split_pcm_wav, ChunkingError
         with tempfile.TemporaryDirectory(prefix="asr_chunks_") as temp_dir:
             try:
-                parts = split_pcm_wav(args.audio, Path(temp_dir), args.chunk_seconds)
+                parts = split_pcm_wav(args.audio, Path(temp_dir), effective_chunk)
             except (ChunkingError, OSError, ValueError) as exc:
                 raise SystemExit(f"BLOCKED: chunk preparation failed: {exc}") from exc
             for part, offset, duration in parts:
@@ -176,15 +187,27 @@ def main():
                     vad_filter=True, beam_size=5, condition_on_previous_text=True
                 )
                 detected_languages.append(info.language)
+                local_words=[]
                 for seg in segments:
                     for w in (seg.words or []):
                         start = max(0., min(duration, w.start))
                         end = max(start, min(duration, w.end))
                         if not w.word.strip() or end <= start:
                             continue
-                        words.append(SimpleNamespace(
-                            word=w.word, start=offset + start, end=offset + end
-                        ))
+                        local_words.append(SimpleNamespace(
+                            word=w.word, start=start, end=end))
+                if aligner and local_words:
+                    alignment_attempted+=1
+                    try:
+                        local_words=aligner.align(part,local_words,info.language,duration)
+                        alignment_succeeded+=1
+                    except (ValueError,RuntimeError,KeyError,IndexError,TypeError):
+                        # ASR output and aligner must match exactly. Never
+                        # silently rewrite text or inject invented timing.
+                        pass
+                for w in local_words:
+                    words.append(SimpleNamespace(word=w.word,
+                                  start=offset+w.start,end=offset+w.end))
     else:
         segments, info = model.transcribe(
             str(args.audio), language=language, word_timestamps=True,
@@ -230,6 +253,9 @@ def main():
     recognized = ",".join(detected_languages)
     print(f"OUTPUT_VALIDATED_NOT_YET_DELIVERED: {target}; "
           f"{report['cues']} cues; detected={recognized}")
+    if aligner:
+        print(f"ALIGNER_ATTEMPTED_CHUNKS={alignment_attempted} ALIGNER_SUCCEEDED_CHUNKS={alignment_succeeded}")
+        print("ALIGNER_FALLBACK_CHUNKS="+str(alignment_attempted-alignment_succeeded))
     print("OFFLINE: no inference service/API quota was used.")
     print("Task remains INCOMPLETE until the SRT is actually delivered to the user.")
     print("Manual word-for-word accuracy review is not established by this check.")

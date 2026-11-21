@@ -160,3 +160,18 @@ readability, very short cues, line count, width). For genuinely fast speech, an
 over-speed warning is unavoidable without inventing slower speech or discarding
 words. The validator preserves original recognized text and will not claim
 perfectly readable captions in such cases. No blanket accuracy guarantee.
+
+## Optional official CPU Qwen3 forced alignment (experimental)
+
+GitHub workflow has `alignment=off|qwen`; **off is the default** until
+a bilingual CPU run and a real-source alignment accuracy comparison justify
+promotion. With `qwen`, the official Apache-2.0
+`Qwen/Qwen3-ForcedAligner-0.6B-hf` is downloaded as static weights
+inside GitHub Runner and used locally (CPU, PyTorch + Transformers).
+Recognition continues to use existing Turbo. Audio is chunked to **240s or
+less** for alignment; original recognized characters/word order are preserved.
+If Qwen's recognized-token alignment does not match the source exactly or
+gives impossible times, individual chunks automatically fall back to Whisper
+word timestamps. No paid/limited API or manual proofreading required.
+This is an **optional experimental mode**, not proven more accurate merely
+because the model returns finer granularity.
