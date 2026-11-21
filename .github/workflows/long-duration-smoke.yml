@@ -1,0 +1,58 @@
+name: 30-minute chunked SRT feasibility on GitHub CPU (synthetic speech)
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/long-duration-smoke.yml'
+permissions:
+  contents: read
+jobs:
+  long-synthetic-whisper:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install FFmpeg, synthetic speech synthesizer and open-source CPU Whisper
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg espeak-ng
+          python -m pip install -r requirements.txt huggingface_hub
+      - name: Create exactly 30 minutes of continuous synthetic speech
+        run: |
+          espeak-ng -v en-us -s 175 -w /tmp/seed.wav 'Hello students. Today we will learn some interesting English words. Please listen carefully and practice with me. This class is a speech recognition timing test.'
+          ffmpeg -hide_banner -loglevel error -y -stream_loop -1 -i /tmp/seed.wav -t 1800 -ac 1 -ar 16000 -c:a pcm_s16le /tmp/continuous-thirty-minutes.wav
+          python - <<'PY'
+          from delivery_gate import audio_duration
+          d=audio_duration(__import__('pathlib').Path('/tmp/continuous-thirty-minutes.wav'))
+          assert 1799.8<=d<=1800.2,d
+          print('SYNTHETIC_SOURCE_DURATION_SECONDS='+str(d))
+          PY
+      - name: Download a fixed open-source Whisper Tiny model (no inference API)
+        run: |
+          python - <<'PY'
+          from huggingface_hub import snapshot_download
+          snapshot_download(repo_id='Systran/faster-whisper-tiny',local_dir='/tmp/tiny-ct2')
+          PY
+      - name: Process 30 minutes in non-overlapping 600-second segments
+        env:
+          HF_HUB_OFFLINE: '1'
+          TRANSFORMERS_OFFLINE: '1'
+        run: |
+          /usr/bin/time -f 'LONG_AUDIO_CPU_WALL_SEC=%e LONG_AUDIO_PEAK_RSS_KB=%M' \
+            python transcribe.py /tmp/continuous-thirty-minutes.wav \
+            --model-dir /tmp/tiny-ct2 --language auto --chunk-seconds 600 \
+            --device cpu --compute-type int8 --output /tmp/long-test-output.srt
+          python delivery_gate.py /tmp/continuous-thirty-minutes.wav /tmp/long-test-output.srt
+          python - <<'PY'
+          from pathlib import Path
+          from delivery_gate import validate_delivery
+          result=validate_delivery(Path('/tmp/continuous-thirty-minutes.wav'),Path('/tmp/long-test-output.srt'))
+          assert result['cues']>=100, result['cues']
+          assert result['last_cue_seconds']>=1750, result['last_cue_seconds']
+          print('THIRTY_MINUTE_SYNTHETIC_SPEECH_WHISPER_CPU_PASS')
+          print('THIRTY_MINUTE_SRT_CUES='+str(result['cues']))
+          print('THIRTY_MINUTE_LAST_END='+str(result['last_cue_seconds']))
+          PY
