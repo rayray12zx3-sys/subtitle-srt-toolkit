@@ -17,6 +17,7 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from huggingface_hub import snapshot_download
 from model_catalog import MODEL_REPOS, get_model_repo
 from tools.secure_exchange import emit_encrypted_srt
+from tools.batch_bundle import is_batch_blob,decode_bundle,encode_bundle
 
 
 MAGIC = b'SRT2'
@@ -95,9 +96,10 @@ def main():
         raise SystemExit('BLOCKED: Timed out waiting for compatible encrypted media')
     with tempfile.TemporaryDirectory(prefix='whisper_private_') as tmp:
         root=Path(tmp)
-        source=root/'source.opus'; audio=root/'audio.wav'; srt=root/'output.srt'; model=root/'model'
-        source.write_bytes(source_bytes)
-        subprocess.run(['ffmpeg','-hide_banner','-loglevel','error','-y','-i',str(source),'-ar','16000','-ac','1',str(audio)],check=True)
+        model=root/'model'
+        batch=is_batch_blob(source_bytes)
+        inputs=decode_bundle(source_bytes,"input") if batch else [("clip_0001",source_bytes)]
+        del source_bytes
         model_start = time.monotonic()
         if a.model == 'breeze-asr-25':
             snapshot_download(repo_id=get_model_repo(a.model),
@@ -110,14 +112,34 @@ def main():
         download_sec = time.monotonic() - model_start
         asr_start = time.monotonic()
         env={**os.environ,'HF_HUB_OFFLINE':'1','TRANSFORMERS_OFFLINE':'1','HF_HUB_DISABLE_TELEMETRY':'1'}
-        subprocess.run([sys.executable,str(Path(__file__).resolve().parents[1]/'transcribe.py'),str(audio),'--model-dir',str(actual_model_dir),'--device','cpu','--compute-type','int8','--language',a.language,'--chunk-seconds',str(a.chunk_seconds),'--traditional','--output',str(srt)],env=env,check=True,stdout=subprocess.DEVNULL)
-        asr_sec = time.monotonic() - asr_start
         from delivery_gate import validate_delivery
-        report=validate_delivery(audio,srt)
-        if report['status'] != 'OUTPUT_VALIDATED_NOT_YET_DELIVERED':
-            raise SystemExit('BLOCKED: Invalid SRT')
-        emit_encrypted_srt(pack(srt.read_bytes(),output_pub,OUTPUT_AAD))
-        print('SRT_VALIDATED_CUES='+str(report['cues']),flush=True)
+        completed=[]
+        cues=0
+        for clip_name,opus_bytes in inputs:
+            folder=root/clip_name
+            folder.mkdir()
+            source=folder/'source.opus';audio=folder/'audio.wav';srt=folder/'output.srt'
+            source.write_bytes(opus_bytes)
+            subprocess.run(['ffmpeg','-hide_banner','-loglevel','error','-nostdin','-y',
+                            '-i',str(source),'-ar','16000','-ac','1','-c:a','pcm_s16le',
+                            str(audio)],check=True,stdout=subprocess.DEVNULL)
+            source.unlink(missing_ok=True)
+            subprocess.run([sys.executable,str(Path(__file__).resolve().parents[1]/'transcribe.py'),
+                            str(audio),'--model-dir',str(actual_model_dir),'--device','cpu',
+                            '--compute-type','int8','--language',a.language,
+                            '--chunk-seconds',str(a.chunk_seconds),
+                            '--traditional','--output',str(srt)],
+                           env=env,check=True,stdout=subprocess.DEVNULL)
+            report=validate_delivery(audio,srt)
+            if report['status']!='OUTPUT_VALIDATED_NOT_YET_DELIVERED':
+                raise SystemExit('BLOCKED: Invalid SRT in batch')
+            cues+=report['cues']
+            completed.append((clip_name,srt.read_bytes()))
+        asr_sec = time.monotonic() - asr_start
+        payload=encode_bundle("output",completed) if batch else completed[0][1]
+        emit_encrypted_srt(pack(payload,output_pub,OUTPUT_AAD))
+        print('SRT_VALIDATED_CUES='+str(cues),flush=True)
+        print('SRT_BATCH_ITEMS='+str(len(completed)),flush=True)
         print('SRT_MODEL_ID='+a.model,flush=True)
         print(f'SRT_MODEL_DOWNLOAD_SECONDS={download_sec:.2f}',flush=True)
         print(f'SRT_ASR_GENERATION_SECONDS={asr_sec:.2f}',flush=True)

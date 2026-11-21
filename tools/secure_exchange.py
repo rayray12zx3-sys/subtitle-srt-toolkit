@@ -24,6 +24,7 @@ from cryptography.hazmat.primitives.asymmetric import padding, rsa
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 from delivery_gate import validate_delivery
+from tools.batch_bundle import MAX_CLIPS, clip_id, encode_bundle, decode_bundle
 
 MAGIC = b"SRT2"
 INPUT_AAD = b"subtitle-srt-toolkit/input2"
@@ -197,6 +198,55 @@ def finish_srt(log: str, private_key: Path, original_audio: Path, output: Path) 
     return report
 
 
+
+def prepare_batch_input(audios: list[Path], public: rsa.RSAPublicKey,
+                        output: Path, ffmpeg: str = "ffmpeg") -> int:
+    if not 1<=len(audios)<=MAX_CLIPS: raise ValueError("Expected 1..8 audio files")
+    items=[]
+    with tempfile.TemporaryDirectory(prefix="private_batch_") as d:
+        for i,audio in enumerate(audios,1):
+            if not audio.is_file() or not audio.stat().st_size:
+                raise ValueError("Missing/empty batch audio")
+            opus=Path(d)/f"{clip_id(i)}.opus"
+            subprocess.run([ffmpeg,"-hide_banner","-loglevel","error","-nostdin","-y",
+                            "-i",str(audio),"-vn","-ac","1","-ar","16000",
+                            "-c:a","libopus","-b:a","48k",str(opus)],
+                           check=True,timeout=180,capture_output=True)
+            items.append((clip_id(i),opus.read_bytes()))
+        ciphertext=make_envelope(encode_bundle("input",items),public,INPUT_AAD)
+    output.parent.mkdir(parents=True,exist_ok=True)
+    with output.open("xb") as f:f.write(ciphertext)
+    return len(ciphertext)
+
+
+def finish_batch_srt(log: str, private_key: Path, audios: list[Path],
+                     output_dir: Path) -> list[dict]:
+    """Fail closed: nothing is exposed until *all* SRT/audio pairs pass."""
+    import shutil
+    if output_dir.exists() or not 1<=len(audios)<=MAX_CLIPS:
+        raise ValueError("New output directory and 1..8 originals required")
+    private=serialization.load_pem_private_key(private_key.read_bytes(),password=None)
+    if not isinstance(private,rsa.RSAPrivateKey) or private.key_size!=2048:
+        raise ValueError("Invalid private return key")
+    result=decode_bundle(open_envelope(output_envelope_from_logs(log),private,OUTPUT_AAD),
+                         "output")
+    if len(result)!=len(audios): raise ValueError("Batch count mismatch")
+    output_dir.parent.mkdir(parents=True,exist_ok=True)
+    staging=Path(tempfile.mkdtemp(prefix=".pending-srt-batch-",dir=output_dir.parent))
+    reports=[]
+    try:
+        for i,((name,raw),audio) in enumerate(zip(result,audios),1):
+            if name!=clip_id(i): raise ValueError("Wrong clip ordering")
+            path=staging/f"{name}.srt"
+            path.write_bytes(raw)
+            reports.append(validate_delivery(audio,path))
+        if output_dir.exists(): raise FileExistsError("Output directory exists")
+        os.rename(staging,output_dir)
+        return reports
+    finally:
+        if staging.exists(): shutil.rmtree(staging)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Private ChatGPT cloud-side SRT transfer helper")
     commands = parser.add_subparsers(dest="action", required=True)
@@ -206,6 +256,15 @@ def main() -> None:
     encrypt.add_argument("--audio", required=True, type=Path)
     encrypt.add_argument("--runner-log", required=True, type=Path)
     encrypt.add_argument("--cipher-out", required=True, type=Path)
+    batch = commands.add_parser("encrypt-batch")
+    batch.add_argument("--audio", action="append", type=Path, required=True)
+    batch.add_argument("--runner-log", type=Path, required=True)
+    batch.add_argument("--cipher-out", type=Path, required=True)
+    final_batch = commands.add_parser("finish-batch")
+    final_batch.add_argument("--private-key", type=Path, required=True)
+    final_batch.add_argument("--job-log", type=Path, required=True)
+    final_batch.add_argument("--audio", action="append", type=Path, required=True)
+    final_batch.add_argument("--output-dir", type=Path, required=True)
     decrypt = commands.add_parser("finish")
     decrypt.add_argument("--private-key", required=True, type=Path)
     decrypt.add_argument("--job-log", required=True, type=Path)
@@ -221,6 +280,16 @@ def main() -> None:
         size = prepare_encrypted_input(args.audio, public, args.cipher_out)
         print("ENCRYPTED_INPUT_READY: ciphertext bytes=" + str(size))
         print("Only upload this ciphertext. Never upload the original recording.")
+    elif args.action == "encrypt-batch":
+        key = runner_public_from_logs(args.runner_log.read_text("utf-8"))
+        size = prepare_batch_input(args.audio, key, args.cipher_out)
+        print("ENCRYPTED_BATCH_INPUT_READY: items=" + str(len(args.audio)) +
+              ", ciphertext_bytes=" + str(size))
+    elif args.action == "finish-batch":
+        reports = finish_batch_srt(args.job_log.read_text("utf-8"), args.private_key,
+                                   args.audio, args.output_dir)
+        print("BATCH_VALIDATED_NOT_YET_DELIVERED: items=" + str(len(reports)) +
+              ", cues=" + str(sum(x["cues"] for x in reports)))
     else:
         report = finish_srt(args.job_log.read_text("utf-8"),
                             args.private_key, args.original_audio, args.output)

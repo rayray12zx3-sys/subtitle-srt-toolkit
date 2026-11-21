@@ -113,3 +113,14 @@ The GitHub-hosted private cloud workflow now exposes two bounded controls:
 - `chunk_seconds=600` (default) — split decoded mono PCM16 WAV into non-overlapping nominal 10-minute segments; choose a nearby quiet point if present, otherwise hard split. Recognized word timestamps are offset back to original file positions and globally validated. `0` disables splitting; valid nonzero values are 2–3600 seconds. Whisper model weights are initialized once per file. Manual transcripts and timing QA remain unverified.
 
 This changes **code behavior only** until a real long-file GitHub inference run is validated. There is still a 100-minute job timeout, finite CPU/RAM/storage, and 64MiB encrypted transfer limit. Automatic detection is not guaranteed accurate for mixed language, and silence-seeking splits can still cut words when there is no nearby silence.
+
+## Private batch of multiple recordings (2026-11-21)
+
+One GitHub-hosted CPU job can now accept an encrypted multi-audio packet containing **1–8 files**. In the assistant cloud workspace only (not user Windows):
+
+```text
+python -m tools.secure_exchange encrypt-batch --audio first.wav --audio second.m4a --runner-log /tmp/start.log --cipher-out /tmp/encrypted-batch.bin
+python -m tools.secure_exchange finish-batch --private-key /tmp/caller.pem --job-log /tmp/end.log --audio first.wav --audio second.m4a --output-dir /mnt/data/new-srt-batch
+```
+
+Returned files are named `clip_0001.srt` and `clip_0002.srt` in input order. A failed clip blocks the whole delivery. The authorized caller still must upload encrypted-only bytes, initiate GitHub Actions and actually attach private SRTs in chat. **Synthetic-only until verified with real GitHub batch inference and a new private multi-audio request.**

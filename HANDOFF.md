@@ -101,3 +101,10 @@ This distinction must stay explicit; do not revive the old Windows-only directio
 - `transcribe.py` optionally loads Whisper **once** then sequentially processes `--chunk-seconds` partitions; detected language may vary per chunk when `--language auto`, all recognized word timecodes receive original-audio offsets, final SRT still passes `delivery_gate.py`. Default for standalone CLI remains no splitting for backward compatibility.
 - Main cloud workflow defaults to `--chunk-seconds 600` and `--language auto`, with explicit zh/en choice if Whisper automatic detection proves unreliable for code-switching recordings. These are *per-chunk multilingual recognition*, not guaranteed word-level code switching.
 - **DO NOT CLAIM 30-60-minute real source verified** from code/CI/synthetic fixtures. Any long-audio runner smoke test and subsequent private real recording must pass before raising supported length claims. Streaming model inference is still sequential and subject to 100-minute job ceiling.
+
+## 2026-11-21 — private multi-file batch conversion (CI/synthetic evaluation pending)
+
+- Added `tools/batch_bundle.py`: strict authenticated-envelope-internal `SRTBATCH1` ZIP manifest for **1–8 clips** with non-identifying `clip_XXXX` IDs, no plaintext source filenames in public metadata, 64MiB plaintext input cap and 16MiB output cap, strict ZIP member/ordering checks.
+- `tools.secure_exchange encrypt-batch` accepts repeated `--audio` source paths and stores only one RSA/AES-GCM ciphertext object; `finish-batch` decrypts one ZIP of SRTs and validates each against the matching original audio, publishing a brand-new private directory only once **all** cues pass.
+- Runner `cloud_handshake.py` auto-detects private batch and runs each clip sequentially with the same pre-downloaded model and existing chunk/language options. Single-audio protocol remains backward compatible.
+- **NOT YET VALIDATED** for real 8-source requests or automated ChatGPT media attachment delivery; CI plus synthetic Runner smoke are required. GitHub 100-minute cap and input size still apply.
