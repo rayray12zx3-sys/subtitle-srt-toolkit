@@ -113,8 +113,12 @@ def main():
         asr_start = time.monotonic()
         env={**os.environ,'HF_HUB_OFFLINE':'1','TRANSFORMERS_OFFLINE':'1','HF_HUB_DISABLE_TELEMETRY':'1'}
         from delivery_gate import validate_delivery
+        from tools.subtitle_quality import analyze_srt
         completed=[]
         cues=0
+        qa_fast=0
+        qa_short=0
+        qa_layout_warnings=0
         for clip_name,opus_bytes in inputs:
             folder=root/clip_name
             folder.mkdir()
@@ -133,6 +137,10 @@ def main():
             report=validate_delivery(audio,srt)
             if report['status']!='OUTPUT_VALIDATED_NOT_YET_DELIVERED':
                 raise SystemExit('BLOCKED: Invalid SRT in batch')
+            metrics=analyze_srt(srt)
+            qa_fast+=metrics['reading_too_fast']
+            qa_short+=metrics['too_brief']
+            qa_layout_warnings+=int(not metrics['layout_ok'])
             cues+=report['cues']
             completed.append((clip_name,srt.read_bytes()))
         asr_sec = time.monotonic() - asr_start
@@ -140,6 +148,9 @@ def main():
         emit_encrypted_srt(pack(payload,output_pub,OUTPUT_AAD))
         print('SRT_VALIDATED_CUES='+str(cues),flush=True)
         print('SRT_BATCH_ITEMS='+str(len(completed)),flush=True)
+        print('SRT_AUTO_QA_FAST_CUES='+str(qa_fast),flush=True)
+        print('SRT_AUTO_QA_SHORT_CUES='+str(qa_short),flush=True)
+        print('SRT_AUTO_QA_LAYOUT_WARNINGS='+str(qa_layout_warnings),flush=True)
         print('SRT_MODEL_ID='+a.model,flush=True)
         print(f'SRT_MODEL_DOWNLOAD_SECONDS={download_sec:.2f}',flush=True)
         print(f'SRT_ASR_GENERATION_SECONDS={asr_sec:.2f}',flush=True)
