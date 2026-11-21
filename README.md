@@ -140,3 +140,9 @@ Next true app integration gate: a **new private** 30m recording or multi-file up
 Example: `python transcribe.py source.wav --model-dir /tmp/whisper-weights --traditional --segmentation smart --max-chars 22 --line-chars 12 --max-lines 2 --max-seconds 4 --output subtitles.srt`. The same behavior applies by default to GitHub cloud and encrypted batches. `--segmentation basic` restores the earlier mechanical rules if needed.
 
 **Limits:** no paid inference API, no extra model download, no manual approval required; punctuation and word-time estimates come from Whisper and may be mistaken. The method is *heuristic semantics*, not full language-model comprehension; one ASR token may contain several Chinese characters, and it will never invent individual character timestamps. Avoid claiming word-perfect transcription or exact timestamp accuracy without independent evidence.
+
+### Automatic smart subtitle layout: live CPU regression
+
+[GitHub Turbo real-inference synthetic test](https://github.com/rayray12zx3-sys/subtitle-srt-toolkit/actions/runs/44927008739) **PASS**, 2 different clips -> 10 SRT cues, of which **8 are automatically two-line**; encrypted send/return, audio-bounded timecodes and approximate max-line width passed. [50/50 code-only tests](https://github.com/rayray12zx3-sys/subtitle-srt-toolkit/actions/runs/44926858655) PASS.
+
+No manual sentence splitting or waveform editor is required. The fully automatic method is heuristic semantics (ASR punctuation, pauses, clause markers, readability), not a promise of 100% correct transcription, perfect semantics, exact per-Chinese-character timestamps or formal superiority to Subtitle Edit.
