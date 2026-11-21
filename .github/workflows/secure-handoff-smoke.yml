@@ -46,10 +46,10 @@ jobs:
           python - <<'PY'
           from pathlib import Path
           from cryptography.hazmat.primitives import serialization
-          from tools.secure_exchange import INPUT_AAD,open_envelope
+          from tools.cloud_handshake import INPUT_AAD,unpack
           key = serialization.load_pem_private_key(Path('/tmp/runner.pem').read_bytes(),password=None)
           Path('/tmp/received.opus').write_bytes(
-              open_envelope(Path('/tmp/only-ciphertext.bin').read_bytes(), key, INPUT_AAD))
+              unpack(Path('/tmp/only-ciphertext.bin').read_bytes(), key, INPUT_AAD))
           PY
           ffmpeg -hide_banner -loglevel error -y -i /tmp/received.opus -ar 16000 -ac 1 /tmp/decoded.wav
       - name: Download static tiny open-source weights and run actual CPU Whisper
@@ -67,12 +67,12 @@ jobs:
           python - <<'PY'
           import contextlib
           from pathlib import Path
-          from tools.secure_exchange import (
-              OUTPUT_AAD, parse_public_key, make_envelope, emit_encrypted_srt)
+          from tools.cloud_handshake import OUTPUT_AAD,pack
+          from tools.secure_exchange import parse_public_key, emit_encrypted_srt
           public = Path('/tmp/caller-pub.txt').read_text().split('PUBLIC_KEY_ONLY=',1)[1].splitlines()[0]
           secret = Path('/tmp/recognized.srt').read_bytes()
           with Path('/tmp/runner-finish.log').open('w') as logs, contextlib.redirect_stdout(logs):
-              emit_encrypted_srt(make_envelope(secret, parse_public_key(public), OUTPUT_AAD))
+              emit_encrypted_srt(pack(secret, parse_public_key(public), OUTPUT_AAD))
           PY
           python -m tools.secure_exchange finish --private-key /tmp/srt-caller.pem \
             --job-log /tmp/runner-finish.log --original-audio /tmp/synthetic_ask.wav \
