@@ -93,3 +93,11 @@ This distinction must stay explicit; do not revive the old Windows-only directio
 - [Real GitHub-hosted CPU Whisper synthetic protocol rehearsal](https://github.com/rayray12zx3-sys/subtitle-srt-toolkit/actions/runs/44915193779) PASS, using production runner-side crypto with assistant client-side crypto and an actual 3-cue SRT.
 - **Accepted in this stage:** reusable cloud-side private transfer helper, long-output encrypted-log support, repo-checked assistant operating procedure, and synthetic real-inference interoperability.
 - **Still not accepted:** a single new private user audio attachment automatically dispatched through connected Google Drive/GitHub services and delivered to chat without manual/permission interruptions. This remaining end-to-end *app integration* gate cannot be declared PASS based on GitHub CI/synthetic audio.
+
+## 2026-11-21 — long audio / mixed language segmentation implementation
+
+- User requested continuation of limit removal: target long audio segmentation, language auto-detection and eventually private multi-file batch conversion. No new default model or user-local compute.
+- Added `tools/chunking.py`: mono PCM16 WAV bounded segments with a silence-seeking boundary ±2s and no overlapping or dropped PCM samples; hard-cut fallback if no silence. The existing runner decodes authenticated Opus to PCM16 WAV using ffmpeg, so chunking remains inside standard GitHub-hosted Actions CPU.
+- `transcribe.py` optionally loads Whisper **once** then sequentially processes `--chunk-seconds` partitions; detected language may vary per chunk when `--language auto`, all recognized word timecodes receive original-audio offsets, final SRT still passes `delivery_gate.py`. Default for standalone CLI remains no splitting for backward compatibility.
+- Main cloud workflow defaults to `--chunk-seconds 600` and `--language auto`, with explicit zh/en choice if Whisper automatic detection proves unreliable for code-switching recordings. These are *per-chunk multilingual recognition*, not guaranteed word-level code switching.
+- **DO NOT CLAIM 30-60-minute real source verified** from code/CI/synthetic fixtures. Any long-audio runner smoke test and subsequent private real recording must pass before raising supported length claims. Streaming model inference is still sequential and subject to 100-minute job ceiling.

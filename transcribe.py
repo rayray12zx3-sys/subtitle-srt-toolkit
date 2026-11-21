@@ -6,7 +6,9 @@ No account, paid API, free-tier inference quota, or network model fallback is us
 import argparse
 import os
 import re
+import tempfile
 from pathlib import Path
+from types import SimpleNamespace
 from delivery_gate import DeliveryBlocked, validate_delivery
 
 TERMINAL_PUNCT = "，。！？；：、,.!?;:"
@@ -97,7 +99,10 @@ def main():
         "--model-dir", "--model", dest="model_dir", type=Path, required=True,
         help="Path to an existing local CTranslate2 faster-whisper model (not a model ID)"
     )
-    parser.add_argument("--language", default=None)
+    parser.add_argument("--language", default=None,
+                        help="BCP language code, or auto to detect language per chunk")
+    parser.add_argument("--chunk-seconds", type=int, default=0,
+                        help="Split normalized mono 16-bit PCM WAV into bounded segments; 0 disables")
     parser.add_argument("--traditional", action="store_true",
                         help="Convert Chinese text offline using OpenCC s2t")
     parser.add_argument("--device", default="auto", choices=["auto", "cpu", "cuda"])
@@ -114,6 +119,8 @@ def main():
         model_dir = require_local_model(args.model_dir)
     except ValueError as exc:
         raise SystemExit(f"BLOCKED: {exc}") from exc
+    if args.chunk_seconds < 0 or args.chunk_seconds == 1 or args.chunk_seconds > 3600:
+        raise SystemExit("BLOCKED: --chunk-seconds must be 0 or between 2 and 3600")
     if args.max_chars < 1 or args.max_seconds <= 0 or args.max_gap < 0:
         raise SystemExit("BLOCKED: Invalid subtitle size/timing limits")
 
@@ -131,11 +138,38 @@ def main():
     model = WhisperModel(
         str(model_dir), device=args.device, compute_type=args.compute_type
     )
-    segments, info = model.transcribe(
-        str(args.audio), language=args.language, word_timestamps=True,
-        vad_filter=True, beam_size=5, condition_on_previous_text=True
-    )
-    words = [word for seg in segments for word in (seg.words or [])]
+    language = None if args.language in (None, "auto") else args.language
+    words = []
+    detected_languages = []
+    if args.chunk_seconds:
+        from tools.chunking import split_pcm_wav, ChunkingError
+        with tempfile.TemporaryDirectory(prefix="asr_chunks_") as temp_dir:
+            try:
+                parts = split_pcm_wav(args.audio, Path(temp_dir), args.chunk_seconds)
+            except (ChunkingError, OSError, ValueError) as exc:
+                raise SystemExit(f"BLOCKED: chunk preparation failed: {exc}") from exc
+            for part, offset, duration in parts:
+                segments, info = model.transcribe(
+                    str(part), language=language, word_timestamps=True,
+                    vad_filter=True, beam_size=5, condition_on_previous_text=True
+                )
+                detected_languages.append(info.language)
+                for seg in segments:
+                    for w in (seg.words or []):
+                        start = max(0., min(duration, w.start))
+                        end = max(start, min(duration, w.end))
+                        if not w.word.strip() or end <= start:
+                            continue
+                        words.append(SimpleNamespace(
+                            word=w.word, start=offset + start, end=offset + end
+                        ))
+    else:
+        segments, info = model.transcribe(
+            str(args.audio), language=language, word_timestamps=True,
+            vad_filter=True, beam_size=5, condition_on_previous_text=True
+        )
+        words = [word for seg in segments for word in (seg.words or [])]
+        detected_languages = [info.language]
     if not words:
         raise SystemExit("BLOCKED: No recognized speech; SRT not written")
 
@@ -157,7 +191,7 @@ def main():
         pending.unlink(missing_ok=True)
         raise SystemExit(f"BLOCKED: no validated new SRT deliverable: {exc}") from exc
     print(f"OUTPUT_VALIDATED_NOT_YET_DELIVERED: {target}; "
-          f"{report['cues']} cues; detected={info.language}")
+          f"{report['cues']} cues; detected={\",\".join(detected_languages)}")
     print("OFFLINE: no inference service/API quota was used.")
     print("Task remains INCOMPLETE until the SRT is actually delivered to the user.")
     print("Manual word-for-word accuracy review is not established by this check.")

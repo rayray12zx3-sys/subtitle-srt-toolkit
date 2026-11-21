@@ -63,6 +63,8 @@ def main():
     p.add_argument('--drive-id',required=True)
     p.add_argument('--output-pub',required=True)
     p.add_argument('--model',choices=list(MODEL_REPOS),default='large-v3-turbo')
+    p.add_argument('--language',choices=['auto','zh','en'],default='auto')
+    p.add_argument('--chunk-seconds',type=int,default=600)
     p.add_argument('--max-wait',type=int,default=1800)
     a=p.parse_args()
     if a.output_pub.startswith('rsa-n:'):
@@ -108,7 +110,7 @@ def main():
         download_sec = time.monotonic() - model_start
         asr_start = time.monotonic()
         env={**os.environ,'HF_HUB_OFFLINE':'1','TRANSFORMERS_OFFLINE':'1','HF_HUB_DISABLE_TELEMETRY':'1'}
-        subprocess.run([sys.executable,str(Path(__file__).resolve().parents[1]/'transcribe.py'),str(audio),'--model-dir',str(actual_model_dir),'--device','cpu','--compute-type','int8','--language','zh','--traditional','--output',str(srt)],env=env,check=True,stdout=subprocess.DEVNULL)
+        subprocess.run([sys.executable,str(Path(__file__).resolve().parents[1]/'transcribe.py'),str(audio),'--model-dir',str(actual_model_dir),'--device','cpu','--compute-type','int8','--language',a.language,'--chunk-seconds',str(a.chunk_seconds),'--traditional','--output',str(srt)],env=env,check=True,stdout=subprocess.DEVNULL)
         asr_sec = time.monotonic() - asr_start
         from delivery_gate import validate_delivery
         report=validate_delivery(audio,srt)

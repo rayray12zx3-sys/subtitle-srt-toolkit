@@ -23,6 +23,20 @@ on:
           - large-v3
           - large-v3-turbo
           - breeze-asr-25
+      language:
+        description: 'Auto detect, or force Chinese/English'
+        type: choice
+        required: true
+        default: auto
+        options:
+          - auto
+          - zh
+          - en
+      chunk_seconds:
+        description: 'Continuous time segments (0 disables; default 600s)'
+        type: number
+        default: 600
+        required: true
 permissions:
   contents: read
 jobs:
@@ -46,5 +60,7 @@ jobs:
           DRIVE_ID: ${{ inputs.encrypted_drive_file_id }}
           OUTPUT_PUB: ${{ inputs.output_public_key }}
           MODEL_NAME: ${{ inputs.model }}
+          LANGUAGE: ${{ inputs.language }}
+          CHUNK_SECONDS: ${{ inputs.chunk_seconds }}
         run: |
-          python -m tools.cloud_handshake --drive-id "$DRIVE_ID" --output-pub "$OUTPUT_PUB" --model "$MODEL_NAME"
+          python -m tools.cloud_handshake --drive-id "$DRIVE_ID" --output-pub "$OUTPUT_PUB" --model "$MODEL_NAME" --language "$LANGUAGE" --chunk-seconds "$CHUNK_SECONDS"

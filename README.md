@@ -104,3 +104,12 @@ not future end-to-end autonomous delivery or word-for-word accuracy.
 The default model remains Large-v3 Turbo; no paid or quota-limited AI
 inference is used. Open-source dependencies and GitHub's normal usage
 limits still apply.
+
+## Long-duration and mixed-language settings (2026-11-21)
+
+The GitHub-hosted private cloud workflow now exposes two bounded controls:
+
+- `language=auto|zh|en` — **auto** per-segment Whisper language detection is the new cloud default; explicit zh/en remains selectable. Code-switching inside one segment can still be misrecognized and requires audio review.
+- `chunk_seconds=600` (default) — split decoded mono PCM16 WAV into non-overlapping nominal 10-minute segments; choose a nearby quiet point if present, otherwise hard split. Recognized word timestamps are offset back to original file positions and globally validated. `0` disables splitting; valid nonzero values are 2–3600 seconds. Whisper model weights are initialized once per file. Manual transcripts and timing QA remain unverified.
+
+This changes **code behavior only** until a real long-file GitHub inference run is validated. There is still a 100-minute job timeout, finite CPU/RAM/storage, and 64MiB encrypted transfer limit. Automatic detection is not guaranteed accurate for mixed language, and silence-seeking splits can still cut words when there is no nearby silence.
