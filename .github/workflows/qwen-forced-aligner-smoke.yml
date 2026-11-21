@@ -25,6 +25,8 @@ jobs:
         run: |
           espeak-ng -v en-us -s 135 -w /tmp/aligner-sample.wav 'Today we will practice our English pronunciation together.'
           ffmpeg -hide_banner -loglevel error -y -i /tmp/aligner-sample.wav -ac 1 -ar 16000 /tmp/aligner-16k.wav
+          espeak-ng -v zh -s 135 -w /tmp/aligner-zh.wav '大家好今天我們一起學習英文'
+          ffmpeg -hide_banner -loglevel error -y -i /tmp/aligner-zh.wav -ac 1 -ar 16000 /tmp/aligner-zh16k.wav
       - name: CPU-only official Qwen3 ForcedAligner inference, no private transcript
         env:
           HF_HUB_DISABLE_TELEMETRY: '1'
@@ -65,6 +67,29 @@ jobs:
               prev=max(prev,b)
           print('QWEN_ALIGNER_CPU_SYNTHETIC_PASS',flush=True)
           print('QWEN_ALIGNER_TOKENS='+str(len(timestamps)),flush=True)
+          zh_inputs,zh_words=processor.prepare_forced_aligner_inputs(
+              audio='/tmp/aligner-zh16k.wav',
+              transcript='大家好今天我們一起學習英文',
+              language='Chinese',
+          )
+          zh_inputs=zh_inputs.to('cpu',torch.float32)
+          with torch.inference_mode():
+              zh_out=model(**zh_inputs)
+          zh_timestamps=processor.decode_forced_alignment(
+              logits=zh_out.logits,
+              input_ids=zh_inputs['input_ids'],
+              word_lists=zh_words,
+              timestamp_token_id=model.config.timestamp_token_id,
+          )[0]
+          assert len(zh_timestamps)>=8
+          previous=-1.
+          for item in zh_timestamps:
+              start_ch=float(item['start_time']);end_ch=float(item['end_time'])
+              assert 0<=start_ch<=end_ch<=30.
+              assert start_ch>=previous-.25
+              previous=max(previous,end_ch)
+          print('QWEN_ALIGNER_CHINESE_SYNTHETIC_PASS',flush=True)
+          print('QWEN_ALIGNER_CHINESE_TOKENS='+str(len(zh_timestamps)),flush=True)
           print('QWEN_ALIGNER_INFERENCE_SECONDS=%.2f'%elapsed,flush=True)
           print('SYNTHETIC_ONLY; NO PRIVATE AUDIO OR REAL-TRANSCRIPT CORRECTNESS VERIFIED',flush=True)
           PY
