@@ -50,8 +50,8 @@ def fetch_public_drive_blob(file_id):
                 host = urlsplit(resp.geturl()).hostname or ''
                 if not (host.endswith('.googleusercontent.com') or host.endswith('.google.com')):
                     continue
-                blob=resp.read(64 * 1024 * 1024 + 1)
-                if len(blob) > 64 * 1024 * 1024:
+                blob=resp.read(64 * 1024 * 1024 + 513)
+                if len(blob) > 64 * 1024 * 1024 + 512:
                     raise ValueError('Encrypted audio exceeds maximum allowed size')
             if blob.startswith(MAGIC):
                 return blob

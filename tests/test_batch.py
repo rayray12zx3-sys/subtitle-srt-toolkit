@@ -32,6 +32,12 @@ class BatchTests(unittest.TestCase):
             with self.assertRaises(ValueError):encode_bundle("input",x)
         with self.assertRaises(ValueError):decode_bundle(MAGIC+b"broken","input")
 
+    def test_full_eight_clip_envelope_roundtrip(self):
+        data=[(clip_id(i),b"synthetic-opus" + bytes([i])) for i in range(1,9)]
+        self.assertEqual(decode_bundle(encode_bundle("input",data),"input"),data)
+        with self.assertRaises(ValueError):
+            clip_id(9)
+
     def _wav(self,n):
         p=self.root/f"{n}.wav"
         with wave.open(str(p),"wb") as w:
