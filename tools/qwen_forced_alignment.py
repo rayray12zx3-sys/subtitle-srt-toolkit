@@ -59,6 +59,57 @@ def map_aligned_words(words, aligned, duration: float):
     return result
 
 
+
+def alignment_boundary_shifts(original_words, aligned_words):
+    """Absolute boundary movements against Whisper, NEVER reference accuracy.
+
+    The aligned model may split Chinese words into characters, so compare
+    timestamps after matching the unchanged original character positions.
+    Reject missing/reordered text. Return only anonymous numeric seconds.
+    """
+    original = "".join(w.word for w in original_words)
+    aligned = "".join(w.word for w in aligned_words)
+    if not original or original != aligned:
+        raise ValueError("Cannot compare timestamp boundaries with altered text")
+
+    indexed = []
+    offset = 0
+    for item in aligned_words:
+        end = offset + len(item.word)
+        indexed.append((offset, end, item))
+        offset = end
+
+    offsets = 0
+    differences = []
+    for word in original_words:
+        first, last = offsets, offsets + len(word.word)
+        offsets = last
+        # For Whisper's token, only actual letters/digits are speech units;
+        # whitespace and punctuation can attach to either neighboring word.
+        lexical = [i for i in range(first, last) if original[i].isalnum()]
+        if not lexical:
+            continue
+        low, high = lexical[0], lexical[-1] + 1
+        matching = [(a, b, item) for a, b, item in indexed
+                    if any(original[j].isalnum()
+                           for j in range(max(low, a), min(high, b)))]
+        if not matching:
+            raise ValueError("No aligned lexical token for original word")
+        aligned_start = float(matching[0][2].start)
+        aligned_end = float(matching[-1][2].end)
+        original_start = float(word.start)
+        original_end = float(word.end)
+        if any(not math.isfinite(t) for t in
+               (aligned_start, aligned_end, original_start, original_end)):
+            raise ValueError("Nonfinite candidate boundary")
+        differences.extend((abs(original_start - aligned_start),
+                            abs(original_end - aligned_end)))
+    if not differences:
+        raise ValueError("No lexical boundary to compare")
+    return differences
+
+
+
 class QwenCPUAligner:
     def __init__(self, model_dir: Path):
         import torch
