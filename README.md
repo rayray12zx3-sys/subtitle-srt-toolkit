@@ -199,25 +199,25 @@ It requires a clear provenance status for that reference and never publishes
 audio, SRT, transcript differences, or private report data to GitHub.
 
 From an authorized **assistant private cloud workspace** (not the user's Windows
-and not in this public repository), with the existing offline \`requirements.txt\`
+and not in this public repository), with the existing offline `requirements.txt`
 environment installed:
 
-\`\`\`text
+```text
 python -m tools.asr_quality_benchmark --reference /private/ai_reference.srt --reference-status ai-unverified --reference-origin "Existing AI-generated reference; not human checked" --candidate /private/turbo.srt --candidate /private/breeze.srt --output /private/benchmark.json
-\`\`\`
+```
 
 - Chinese characters are counted separately, English words and numerals as
   whole tokens; Unicode punctuation/spacing and case are normalized and the
-  offline OpenCC \`s2t\` converter normalizes Simplified/Traditional Han forms.
+  offline OpenCC `s2t` converter normalizes Simplified/Traditional Han forms.
   Every comparison uses **exact Levenshtein edit distance**, not a fuzzy
   similarity estimate; output differences are **relative to the stated reference**.
-- If \`reference-status=ai-unverified\`, the report is explicitly
-  \`AI_REFERENCE_DISAGREEMENT_ONLY\`: it contains **no human CER/WER** and
+- If `reference-status=ai-unverified`, the report is explicitly
+  `AI_REFERENCE_DISAGREEMENT_ONLY`: it contains **no human CER/WER** and
   cannot designate an accuracy winner. This is the correct status for the
   stored Google AI reference and the AI-corrected draft.
 - Only an explicitly sourced, **human-listened and corrected** reference
-  should use \`reference-status=human-verified\`. In that case the report
-  exposes \`han_cer\`, \`english_wer\` and \`mixed_unit_error_rate\` measured
+  should use `reference-status=human-verified`. In that case the report
+  exposes `han_cer`, `english_wer` and `mixed_unit_error_rate` measured
   against that reference. Human origin is a caller declaration; code cannot
   independently certify real human listening. These rates are **text accuracy
   only**, not exact audio word-alignment accuracy.
@@ -229,3 +229,5 @@ python -m tools.asr_quality_benchmark --reference /private/ai_reference.srt --re
   8,000-unit limit per comparison), and do not present a fake overall rate.
 - Do not automatically overwrite the existing 24-cue approved SRT with a
   different 23-cue model run solely on the basis of AI agreement.
+
+If the assistant's private runtime lacks the OpenCC package, explicitly pass `--han-conversion none` for a **Unicode-only preliminary report**. That report must state that Simplified/Traditional differences may be overcounted; do not compare its percentages directly with an OpenCC-normalized benchmark.
