@@ -60,6 +60,7 @@ on:
           - large-v3-turbo
           - breeze-asr-25
           - qwen3-asr-1.7b
+          - fun-asr-nano-2512
       language:
         description: 'Auto detect, or force Chinese/English'
         type: choice
@@ -101,8 +102,8 @@ jobs:
       - name: Install offline inference packages
         run: |
           python -m pip install -r requirements.txt 'cryptography>=42,<48' huggingface_hub
-      - name: Install pinned Qwen3-ASR C++ CPU build dependencies
-        if: ${{ inputs.model == 'qwen3-asr-1.7b' }}
+      - name: Install CPU candidate C/C++ build dependencies
+        if: ${{ inputs.model == 'qwen3-asr-1.7b' || inputs.model == 'fun-asr-nano-2512' }}
         run: |
           sudo apt-get install -y -qq build-essential libopenblas-dev git curl
       - name: Install optional official Qwen CPU alignment stack
@@ -111,7 +112,7 @@ jobs:
           python -m pip install 'torch==2.8.0' --index-url https://download.pytorch.org/whl/cpu
           python -m pip install 'transformers>=5.13.0,<6' librosa sentencepiece
       - name: Generate ephemeral keys, privately transcribe on GitHub and encrypt output
-        if: ${{ inputs.model != 'qwen3-asr-1.7b' }}
+        if: ${{ inputs.model != 'qwen3-asr-1.7b' && inputs.model != 'fun-asr-nano-2512' }}
         env:
           DRIVE_ID: ${{ inputs.encrypted_drive_file_id }}
           INPUT_TRANSPORT: ${{ inputs.transport }}
@@ -132,3 +133,13 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           python -m tools.qwen_private_benchmark --model-size large --transport "$INPUT_TRANSPORT" --drive-id "$DRIVE_ID" --output-pub "$OUTPUT_PUB"
+
+      - name: Private Fun-ASR-Nano GGUF CPU benchmark (encrypted candidate)
+        if: ${{ inputs.model == 'fun-asr-nano-2512' }}
+        env:
+          INPUT_TRANSPORT: ${{ inputs.transport }}
+          DRIVE_ID: ${{ inputs.encrypted_drive_file_id }}
+          OUTPUT_PUB: ${{ inputs.output_public_key }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          python -m tools.funasr_private_benchmark --transport "$INPUT_TRANSPORT" --drive-id "$DRIVE_ID" --output-pub "$OUTPUT_PUB"

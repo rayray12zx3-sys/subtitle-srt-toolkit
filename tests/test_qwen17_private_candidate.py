@@ -55,7 +55,7 @@ class CandidateQwen17Tests(unittest.TestCase):
         yml = (ROOT / ".github/workflows/cloud-handshake.yml").read_text("utf-8")
         self.assertIn("qwen3-asr-1.7b", yml)
         self.assertIn('if: ${{ inputs.model == \'qwen3-asr-1.7b\' }}', yml)
-        self.assertIn('if: ${{ inputs.model != \'qwen3-asr-1.7b\' }}', yml)
+        self.assertIn('inputs.model != \'qwen3-asr-1.7b\' && inputs.model != \'fun-asr-nano-2512\'', yml)
         self.assertIn("python -m tools.qwen_private_benchmark --model-size large", yml)
         self.assertIn('libopenblas-dev', yml)
         self.assertNotIn("secrets: inherit", yml)
