@@ -35,10 +35,10 @@ on:
       alignment:
         description: 'Optional offline Qwen word/character alignment (CPU, slower)'
         type: choice
-        default: off
+        default: 'off'
         required: true
         options:
-          - off
+          - 'off'
           - qwen
       chunk_seconds:
         description: 'Continuous time segments (0 disables; default 600s)'
