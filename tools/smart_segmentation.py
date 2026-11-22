@@ -51,20 +51,12 @@ def visual_width(text: str) -> int:
 
 
 def _text(words) -> str:
-    pieces = []
-    for item in words:
-        chunk = item.word
-        # Whisper word timestamps sometimes omit the leading space even
-        # between separate English words; insert *display only* spacing.
-        if (pieces and chunk and chunk[0].isascii() and chunk[0].isalpha()
-                and not chunk[0].isspace()
-                and re.search(r"[A-Za-z.!?]$", pieces[-1])):
-            pieces.append(" ")
-        pieces.append(chunk)
-    result = re.sub(r"\s+", " ", "".join(pieces)).strip()
-    # Also handle glued English punctuation within ONE source word token.
+    # Whisper may split a single English word into multiple timing tokens
+    # such as L+ala or W+ish. Never invent a space across their boundary.
+    result = re.sub(r"\s+", " ", "".join(item.word for item in words)).strip()
+    # Only an unambiguous ASCII sentence punctuation boundary is safely
+    # spaced; even if punctuation and following word share ONE source token.
     return re.sub(r"(?<=[A-Za-z][.!?])(?=[A-Za-z])", " ", result)
-
 
 def _protected_boundaries(words):
     """Indices where splitting would break a recognized Chinese lexical word.
