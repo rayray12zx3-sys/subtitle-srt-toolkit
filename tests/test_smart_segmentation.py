@@ -87,7 +87,7 @@ class SmartSemanticTests(unittest.TestCase):
         seq = make(["The worst part is, ", "she's right.Well", "maybe "])
         self.assertIn("right. Well", _text(seq))
         lines = break_lines(seq, line_chars=80, max_lines=2)
-        self.assertEqual(lines, ["The worst part is, she's right. Wellmaybe"])
+        self.assertEqual(lines, ["The worst part is, she's right. Well maybe"])
 
     def test_lexical_guard_applies_inside_two_line_layout(self):
         words = make(["今天", "我們", "學", "形", "容詞", "有趣", "也很", "實用"])
