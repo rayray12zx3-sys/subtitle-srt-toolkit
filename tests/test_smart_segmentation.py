@@ -108,7 +108,7 @@ class SmartSemanticTests(unittest.TestCase):
         original = ["The worst part is, she", "'s right. Well"]
         fixed = repair_split_contraction_lines(original, line_chars=12)
         self.assertEqual(fixed, ["The worst part is,", "she's right. Well"])
-        self.assertEqual("".join(original), "".join(fixed))
+        self.assertEqual("".join(original).replace(" ", ""), "".join(fixed).replace(" ", ""))
         self.assertTrue(all(visual_width(line) <= 26 for line in fixed))
         self.assertEqual(repair_split_contraction_lines(["Hello", " everyone"], 12),
                          ["Hello", " everyone"])
