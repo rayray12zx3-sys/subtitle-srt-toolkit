@@ -258,7 +258,7 @@ def repair_split_contraction_lines(lines, line_chars=12):
     if len(lines) != 2:
         return lines
     left, right = lines
-    if not re.match(r"^(?:['’](?:s|re|ve|ll|d|m|t)|n['’]t)\\b", right,
+    if not re.match(r"^(?:['’](?:s|re|ve|ll|d|m|t)|n['’]t)\b", right,
                     re.IGNORECASE):
         return lines
     match = re.search(r"[A-Za-z]+$", left)
