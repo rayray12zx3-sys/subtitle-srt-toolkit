@@ -6,6 +6,7 @@ No account, paid API, free-tier inference quota, or network model fallback is us
 import argparse
 import os
 import re
+import statistics
 import tempfile
 from pathlib import Path
 from types import SimpleNamespace
@@ -166,6 +167,7 @@ def main():
     aligner = None
     alignment_attempted=0
     alignment_succeeded=0
+    alignment_boundary_deltas=[]
     if args.aligner_dir is not None:
         from tools.qwen_forced_alignment import QwenCPUAligner
         aligner=QwenCPUAligner(args.aligner_dir)
@@ -199,7 +201,11 @@ def main():
                 if aligner and local_words:
                     alignment_attempted+=1
                     try:
-                        local_words=aligner.align(part,local_words,info.language,duration)
+                        candidate=aligner.align(part,local_words,info.language,duration)
+                        from tools.qwen_forced_alignment import alignment_boundary_shifts
+                        delta=alignment_boundary_shifts(local_words,candidate)
+                        alignment_boundary_deltas.extend(delta)
+                        local_words=candidate
                         alignment_succeeded+=1
                     except (ValueError,RuntimeError,KeyError,IndexError,TypeError):
                         # ASR output and aligner must match exactly. Never
@@ -256,6 +262,17 @@ def main():
     if aligner:
         print(f"ALIGNER_ATTEMPTED_CHUNKS={alignment_attempted} ALIGNER_SUCCEEDED_CHUNKS={alignment_succeeded}")
         print("ALIGNER_FALLBACK_CHUNKS="+str(alignment_attempted-alignment_succeeded))
+        print("ALIGNER_BOUNDARY_COMPARISON_SAMPLES="+str(len(alignment_boundary_deltas)))
+        if alignment_boundary_deltas:
+            sorted_shifts=sorted(alignment_boundary_deltas)
+            n=len(sorted_shifts)
+            p95=sorted_shifts[max(0,(95*n+99)//100-1)]
+            print("ALIGNER_BOUNDARY_MEDIAN_ABS_SHIFT_SECONDS=" +
+                  f"{statistics.median(sorted_shifts):.3f}")
+            print("ALIGNER_BOUNDARY_P95_ABS_SHIFT_SECONDS="+f"{p95:.3f}")
+            print("ALIGNER_BOUNDARY_MAX_ABS_SHIFT_SECONDS="+f"{sorted_shifts[-1]:.3f}")
+        else:
+            print("ALIGNER_NO_ACCEPTED_ALIGNMENT: preserve Whisper times")
     print("OFFLINE: no inference service/API quota was used.")
     print("Task remains INCOMPLETE until the SRT is actually delivered to the user.")
     print("Manual word-for-word accuracy review is not established by this check.")

@@ -1,7 +1,7 @@
 """Synthetic faithful Qwen alignment mapping tests; no model download."""
 import unittest
 from types import SimpleNamespace
-from tools.qwen_forced_alignment import norm,map_aligned_words
+from tools.qwen_forced_alignment import norm,map_aligned_words,alignment_boundary_shifts
 
 class ForcedAlignmentMapTests(unittest.TestCase):
     def test_chinese_char_timestamps_without_changing_punctuation(self):
@@ -38,6 +38,31 @@ class ForcedAlignmentMapTests(unittest.TestCase):
                {"text":"B","start_time":.0,"end_time":.2}]
         with self.assertRaises(ValueError):
             map_aligned_words(words,items,1.2)
+
+    def test_boundary_shift_uses_same_original_text_and_character_mapping(self):
+        words=[SimpleNamespace(word="今天",start=0,end=.7),
+               SimpleNamespace(word="我們。",start=.7,end=1.4)]
+        items=[
+            {"text":"今","start_time":.1,"end_time":.28},
+            {"text":"天","start_time":.28,"end_time":.55},
+            {"text":"我","start_time":.7,"end_time":.97},
+            {"text":"們","start_time":.97,"end_time":1.2},
+        ]
+        aligned=map_aligned_words(words,items,1.5)
+        shifts=alignment_boundary_shifts(words,aligned)
+        self.assertEqual(len(shifts),4)
+        self.assertAlmostEqual(shifts[0],.1)
+        self.assertAlmostEqual(shifts[1],.15)
+        self.assertAlmostEqual(shifts[2],0)
+        self.assertAlmostEqual(shifts[3],.2)
+        self.assertEqual("".join(w.word for w in words),
+                         "".join(w.word for w in aligned))
+
+    def test_boundary_shift_rejects_changed_text(self):
+        original=[SimpleNamespace(word="hello",start=.1,end=.6)]
+        altered=[SimpleNamespace(word="hullo",start=.1,end=.6)]
+        with self.assertRaisesRegex(ValueError,"altered text"):
+            alignment_boundary_shifts(original,altered)
 
     def test_normalization_excludes_punctuation(self):
         self.assertEqual(norm("Hello, 世界！"),norm("hello世界"))
