@@ -56,7 +56,7 @@ jobs:
     if: needs.validate.outputs.smoke == 'false'
     permissions:
       contents: read
-      issues: read
+      issues: write
     uses: ./.github/workflows/cloud-handshake.yml
     with:
       transport: ${{ needs.validate.outputs.transport }}
