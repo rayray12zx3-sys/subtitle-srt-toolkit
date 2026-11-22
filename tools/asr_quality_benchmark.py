@@ -136,11 +136,17 @@ def compare(reference_text: str, candidate_text: str, *,
 
 def read_private_text(path: Path) -> str:
     suffix = path.suffix.lower()
-    if suffix == ".srt":
-        return read_srt_text(path)
-    if suffix != ".txt":
+    if suffix not in (".txt", ".srt"):
         raise ValueError("Only private .srt or .txt references are supported")
-    return path.read_text("utf-8-sig")
+    raw = path.read_text("utf-8-sig")
+    # Some Google Drive connectors export actual .srt content with a .srt.txt
+    # filename. Detect the numbered timecode header to avoid accidentally
+    # including all timestamps/indices as "words" in the benchmark.
+    is_srt = bool(re.match(
+        r"\s*\d+\r?\n\d{2}:\d{2}:\d{2},\d{3} --> ", raw))
+    if suffix == ".srt" or is_srt:
+        return read_srt_text(path)
+    return raw
 
 
 def write_private_json(path: Path, result: dict, source_paths: list[Path]) -> None:
@@ -174,14 +180,24 @@ def main() -> None:
     parser.add_argument("--candidate", type=Path, action="append", required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--max-disagreements", type=int, default=15)
+    parser.add_argument("--han-conversion", choices=("opencc", "none"), default="opencc",
+                        help="OpenCC s2t offline by default; 'none' explicitly skips "
+                             "Chinese script conversion and may overstate mismatches")
     args = parser.parse_args()
     if not args.reference_origin.strip():
         parser.error("Reference provenance required")
-    try:
-        from opencc import OpenCC
-    except ImportError as exc:
-        parser.error("OpenCC offline package required: install requirements.txt")
-    convert = OpenCC("s2t").convert
+    if args.han_conversion == "opencc":
+        try:
+            from opencc import OpenCC
+        except ImportError:
+            parser.error("Offline OpenCC package required: install requirements.txt "
+                         "or explicitly use --han-conversion none")
+        convert = OpenCC("s2t").convert
+        conversion_label = "offline OpenCC s2t + Unicode NFKC, apostrophes, casefold"
+    else:
+        convert = None
+        conversion_label = ("Unicode NFKC, apostrophes, casefold; NO Chinese script "
+                            "conversion: Simplified/Traditional false differences possible")
     source_paths = [args.reference, *args.candidate]
     ref_text = read_private_text(args.reference)
     results = {}
@@ -202,7 +218,7 @@ def main() -> None:
                    else "AI_REFERENCE_DISAGREEMENT_ONLY"),
         "reference_status": args.reference_status,
         "reference_origin": args.reference_origin,
-        "normalization": "offline OpenCC s2t + NFKC + casefold + punctuation ignored",
+        "normalization": conversion_label + " + punctuation/whitespace ignored",
         "candidate_results": results,
         "privacy": "Private report, must never be committed to public GitHub",
     }
