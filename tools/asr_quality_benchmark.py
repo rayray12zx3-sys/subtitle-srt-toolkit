@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import difflib
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -169,6 +170,39 @@ def write_private_json(path: Path, result: dict, source_paths: list[Path]) -> No
             os.unlink(pending)
 
 
+def validate_human_audit(audit_path: Path, reference_path: Path) -> dict:
+    """Require content-bound, per-cue human attestation for real CLI CER/WER.
+
+    Software still cannot independently prove the reviewer listened; this
+    prevents merely flipping --reference-status on an unverified AI SRT.
+    """
+    audit = json.loads(audit_path.read_text("utf-8-sig"))
+    if audit.get("schema") != "subtitle-srt-human-review-v1":
+        raise ValueError("Invalid or missing human review provenance audit")
+    status = audit.get("status")
+    if status not in ("HUMAN_SELF_ATTESTED_TEXT_ONLY",
+                      "HUMAN_SELF_ATTESTED_TEXT_AND_CUE_TIMING"):
+        raise ValueError("Incomplete or non-human review audit")
+    cues = audit.get("cues")
+    if type(cues) is not int or cues < 1 or audit.get("text_reviewed") != cues:
+        raise ValueError("Human text review not complete for every cue")
+    if (status == "HUMAN_SELF_ATTESTED_TEXT_AND_CUE_TIMING"
+            and audit.get("time_reviewed") != cues):
+        raise ValueError("Human cue timing review not complete")
+    reviewer = audit.get("reviewer_id")
+    if not isinstance(reviewer, str) or len(reviewer.strip()) < 2:
+        raise ValueError("Missing private human reviewer identity")
+    if not isinstance(audit.get("review_completed_utc"), str) or not audit["review_completed_utc"]:
+        raise ValueError("Missing human review completion date")
+    if (reference_path.suffix.lower() != (".txt" if status.endswith("TEXT_ONLY") else ".srt")):
+        raise ValueError("Reference extension does not match human audit type")
+    h = hashlib.sha256(reference_path.read_bytes()).hexdigest()
+    if audit.get("gold_sha256") != h:
+        raise ValueError("Human audit does not match private reference file SHA-256")
+    return {"kind": status, "reviewed_cues": cues,
+            "note": "Self-attested audio listening, not independently proved by software"}
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Private mixed Chinese/English ASR comparison")
     parser.add_argument("--reference", type=Path, required=True,
@@ -177,6 +211,9 @@ def main() -> None:
                         required=True)
     parser.add_argument("--reference-origin", required=True,
                         help="Explicit provenance; do not imply human listening for AI reference")
+    parser.add_argument("--human-audit", type=Path, default=None,
+                        help="REQUIRED for human-verified mode: private gold-reference audit "
+                             "matching reference SHA-256 and all cue confirmations")
     parser.add_argument("--candidate", type=Path, action="append", required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--max-disagreements", type=int, default=15)
@@ -186,6 +223,15 @@ def main() -> None:
     args = parser.parse_args()
     if not args.reference_origin.strip():
         parser.error("Reference provenance required")
+    if args.reference_status == "human-verified":
+        if args.human_audit is None:
+            parser.error("Human-verified CER/WER requires --human-audit from a completed "
+                         "private per-cue listening review")
+        audit_summary = validate_human_audit(args.human_audit, args.reference)
+    else:
+        if args.human_audit is not None:
+            parser.error("--human-audit is only valid for human-verified reference mode")
+        audit_summary = None
     if args.han_conversion == "opencc":
         try:
             from opencc import OpenCC
@@ -218,6 +264,7 @@ def main() -> None:
                    else "AI_REFERENCE_DISAGREEMENT_ONLY"),
         "reference_status": args.reference_status,
         "reference_origin": args.reference_origin,
+        "human_reference_audit": audit_summary,
         "normalization": conversion_label + " + punctuation/whitespace ignored",
         "candidate_results": results,
         "privacy": "Private report, must never be committed to public GitHub",
