@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 
-from tools.smart_segmentation import segment_words, break_lines, visual_width, _protected_boundaries, _text
+from tools.smart_segmentation import segment_words, break_lines, visual_width, _protected_boundaries, _text, repair_split_contraction_lines
 from transcribe import write_srt
 
 
@@ -103,6 +103,15 @@ class SmartSemanticTests(unittest.TestCase):
         self.assertFalse(result[0].endswith("形"))
         self.assertFalse(result[0].endswith("心"))
         self.assertIn("形容詞", "".join(result))
+
+    def test_safe_display_only_reflow_of_existing_srt_contraction(self):
+        original = ["The worst part is, she", "'s right. Well"]
+        fixed = repair_split_contraction_lines(original, line_chars=12)
+        self.assertEqual(fixed, ["The worst part is,", "she's right. Well"])
+        self.assertEqual("".join(original), "".join(fixed))
+        self.assertTrue(all(visual_width(line) <= 26 for line in fixed))
+        self.assertEqual(repair_split_contraction_lines(["Hello", " everyone"], 12),
+                         ["Hello", " everyone"])
 
     def test_english_contractions_do_not_split_across_lines(self):
         words=make(["The worst part is, ", "she", "'s", " right.", " Well"])
