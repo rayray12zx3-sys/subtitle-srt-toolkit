@@ -89,7 +89,12 @@ def validate_command(body):
     if model in ("qwen3-asr-1.7b", "fun-asr-nano-2512") and (
             language != "auto" or alignment != "off"):
         raise ValueError("Text benchmark candidates require language=auto and alignment=off")
-    if type(chunk_seconds) is not int or chunk_seconds not in (0, *range(60, 1801)):
+    # Short chunks are restricted to the Qwen alignment experiment: the
+    # forced aligner accepts one language per clip, while teaching recordings
+    # may switch between Chinese and English within a minute.
+    minimum = 12 if alignment == "qwen" else 60
+    if (type(chunk_seconds) is not int or
+            (chunk_seconds != 0 and not minimum <= chunk_seconds <= 1800)):
         raise ValueError("Invalid chunk seconds")
     return {
         "smoke": "false",
