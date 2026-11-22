@@ -55,6 +55,16 @@ class IssueCommentDispatchTests(unittest.TestCase):
         self.assertEqual(result["alignment"], "qwen")
         self.assertEqual(result["chunk_seconds"], "0")
 
+    def test_probe_command_requires_expiring_signed_cipher_link(self):
+        from unittest.mock import patch
+        with patch("tools.signed_cipher_transport.validate_signed_url",
+                   return_value="https://approved.example.test/temporary"):
+            result = validate_event(event("/srt-probe https://example.test"))
+        self.assertEqual(result["smoke"], "probe")
+        self.assertEqual(result["probe_url"], "https://approved.example.test/temporary")
+        with self.assertRaises(ValueError):
+            validate_event(event("/srt-probe https://example.com/plaintext.wav"))
+
     def test_signed_url_transport_needs_no_drive_id(self):
         command = "/srt-run " + json.dumps({
             "output_public_key": FAKE_RSA_N, "transport": "signed-url",
