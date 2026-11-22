@@ -50,13 +50,42 @@ def visual_width(text: str) -> int:
     return width
 
 
+# CamelCase product names are not automatic English word breaks.
+# The small list is intentionally conservative; unknown names require review.
+CAMELCASE_KEEP = frozenset((
+    "YouTube", "GitHub", "ChatGPT", "OpenAI", "PowerPoint",
+    "iPhone", "iPad", "MacBook", "eBay", "TikTok", "CapCut",
+))
+_CAMEL_WORD = re.compile(r"\b[A-Za-z]*[a-z][A-Z][a-z]+[A-Za-z]*\b")
+_CAMEL_EDGE = re.compile(r"(?<=[a-z])(?=[A-Z][a-z])")
+
+
+def suspicious_english_glue(text: str) -> list[str]:
+    """Flag likely English words fused by missing whitespace; keep brands intact."""
+    return [m.group(0) for m in _CAMEL_WORD.finditer(text)
+            if m.group(0) not in CAMELCASE_KEEP]
+
+
+def repair_english_glue(text: str) -> str:
+    """Display-only spacing at a lowercase->Uppercase boundary.
+
+    Whisper can return walk+Now without leading whitespace.
+    Don't split subword fragments L+ala / W+ish (not camel-case), and preserve
+    known CamelCase names. Never fabricate timestamp boundaries.
+    """
+    def fix(match):
+        word = match.group(0)
+        return word if word in CAMELCASE_KEEP else _CAMEL_EDGE.sub(" ", word)
+    return _CAMEL_WORD.sub(fix, text)
+
+
 def _text(words) -> str:
-    # Whisper may split a single English word into multiple timing tokens
-    # such as L+ala or W+ish. Never invent a space across their boundary.
+    # Preserve Whisper intra-token fragments like L+ala and W+ish.
     result = re.sub(r"\s+", " ", "".join(item.word for item in words)).strip()
-    # Only an unambiguous ASCII sentence punctuation boundary is safely
-    # spaced; even if punctuation and following word share ONE source token.
-    return re.sub(r"(?<=[A-Za-z][.!?])(?=[A-Za-z])", " ", result)
+    # Add missing sentence-punctuation spacing, then conservative case-boundary
+    # spacing. These are presentation-only operations: no nonspace text changed.
+    result = re.sub(r"(?<=[A-Za-z][.!?])(?=[A-Za-z])", " ", result)
+    return repair_english_glue(result)
 
 def _protected_boundaries(words):
     """Indices where splitting would break a recognized Chinese lexical word.

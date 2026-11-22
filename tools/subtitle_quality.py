@@ -7,7 +7,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 from delivery_gate import timestamp_ms
-from tools.smart_segmentation import visual_width, reading_units
+from tools.smart_segmentation import visual_width, reading_units, suspicious_english_glue
 
 
 def analyze_srt(path: Path, line_chars=12, max_lines=2, rate_limit=8.0):
@@ -18,6 +18,7 @@ def analyze_srt(path: Path, line_chars=12, max_lines=2, rate_limit=8.0):
     counts={"cues":0,"multi_line":0,"too_many_lines":0,"too_wide":0,
             "too_brief":0,"reading_too_fast":0,"high_rate":0.,
             "split_contractions":0,"glued_english_sentences":0,
+            "joined_english_words":0,
             "max_width":0,"max_lines":max_lines}
     for block in blocks:
         bits=block.splitlines()
@@ -32,6 +33,7 @@ def analyze_srt(path: Path, line_chars=12, max_lines=2, rate_limit=8.0):
             flags=re.IGNORECASE)))
         counts["glued_english_sentences"]+=int(bool(re.search(
             r"(?<=[A-Za-z][.!?])(?=[A-Za-z])", display_text)))
+        counts["joined_english_words"]+=int(bool(suspicious_english_glue(display_text)))
         counts["cues"]+=1
         counts["multi_line"]+=int(len(lines)>1)
         counts["too_many_lines"]+=int(len(lines)>max_lines)
@@ -44,7 +46,8 @@ def analyze_srt(path: Path, line_chars=12, max_lines=2, rate_limit=8.0):
         counts["reading_too_fast"]+=int(rate>rate_limit)
     counts["layout_ok"]=(counts["too_many_lines"]==0 and counts["too_wide"]==0
                          and counts["split_contractions"]==0
-                         and counts["glued_english_sentences"]==0)
+                         and counts["glued_english_sentences"]==0
+                         and counts["joined_english_words"]==0)
     # Overspeed/short cues can be caused by genuinely fast speech; warn,
     # don't silently delete, rewrite or assert a proven accuracy outcome.
     return counts

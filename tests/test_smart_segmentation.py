@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 
-from tools.smart_segmentation import segment_words, break_lines, visual_width, _protected_boundaries, _text, repair_split_contraction_lines
+from tools.smart_segmentation import segment_words, break_lines, visual_width, _protected_boundaries, _text, repair_split_contraction_lines, suspicious_english_glue, repair_english_glue
 from transcribe import write_srt
 
 
@@ -95,6 +95,21 @@ class SmartSemanticTests(unittest.TestCase):
         self.assertEqual(_text(make(["W", "ish", " me", " luck"])), "Wish me luck")
         self.assertEqual(_text(make(["right.", "Well", " maybe"])),
                          "right. Well maybe")
+
+    def test_missing_english_whitespace_is_repaired_only_at_case_boundary(self):
+        self.assertEqual(_text(make(["we walk", "Now we start"])),
+                         "we walk Now we start")
+        self.assertEqual(repair_english_glue("walkNow sayOkay"), "walk Now say Okay")
+        self.assertEqual(suspicious_english_glue("walkNow sayOkay"),
+                         ["walkNow", "sayOkay"])
+        self.assertEqual(suspicious_english_glue("walk Now say Okay"), [])
+
+    def test_camelcase_names_and_split_subwords_stay_intact(self):
+        input_words = ["L", "ala", " ", "W", "ish", " ", "You", "Tube", " ",
+                       "ChatGPT", " ", "PowerPoint", " ", "iPhone"]
+        result = _text(make(input_words))
+        self.assertEqual(result, "Lala Wish YouTube ChatGPT PowerPoint iPhone")
+        self.assertEqual(suspicious_english_glue(result), [])
 
     def test_lexical_guard_applies_inside_two_line_layout(self):
         words = make(["今天", "我們", "學", "形", "容詞", "有趣", "也很", "實用"])

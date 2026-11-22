@@ -62,6 +62,28 @@ class AutoReadingTests(unittest.TestCase):
             self.assertEqual(result["glued_english_sentences"],1)
             self.assertFalse(result["layout_ok"])
 
+    def test_quality_detects_fused_case_boundary_english(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "fused.srt"
+            p.write_text("1\n00:00:00,000 --> 00:00:02,000\n"
+                         "walkNow and sayOkay\n", encoding="utf-8")
+            bad = analyze_srt(p, line_chars=24)
+            self.assertEqual(bad["joined_english_words"], 1)
+            self.assertFalse(bad["layout_ok"])
+            p.write_text("1\n00:00:00,000 --> 00:00:02,000\n"
+                         "walk Now and say Okay\n", encoding="utf-8")
+            good = analyze_srt(p, line_chars=24)
+            self.assertEqual(good["joined_english_words"], 0)
+            self.assertTrue(good["layout_ok"])
+
+    def test_quality_preserves_known_camelcase_names(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "brands.srt"
+            p.write_text("1\n00:00:00,000 --> 00:00:02,000\n"
+                         "YouTube ChatGPT PowerPoint iPhone\n", encoding="utf-8")
+            good = analyze_srt(p, line_chars=24)
+            self.assertEqual(good["joined_english_words"], 0)
+
     def test_no_hidden_word_rewriting(self):
         words=[tok("非常",0.,.35),tok("快速",.35,.68),tok("的",.7,.78),
                tok("測試。",.8,1.1),tok("接著",1.45,1.7),tok("看看",1.71,2.1)]
