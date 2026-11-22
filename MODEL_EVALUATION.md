@@ -87,3 +87,19 @@ Verified 2026-11-20 on **standard GitHub-hosted Ubuntu CPU runners** using stati
   mismatch snippets to public logs. Do not upload generated JSON to GitHub.
 - The latest true-source Turbo+Smart2 and prior candidate results remain valid
   functional acceptance, not evidence of human-word-accuracy superiority.
+
+
+## 2026-11-22 — current model shortlist, official license and CPU constraints
+
+| Candidate | Official source | Model weights license | GitHub CPU path | Result scope |
+| --- | --- | --- | --- | --- |
+| **Qwen3-ASR 1.7B** | https://huggingface.co/Qwen/Qwen3-ASR-1.7B | Apache-2.0 (model card) | **Existing pinned C engine** `antirez/qwen-asr@924694251d9e0f18e5d86bbd06aa3ab5f870002d`, OpenBLAS, `large` weights; same owner Issue #1 short-lived AES-GCM/RSA transfer | Prior **synthetic CPU inference PASS**. New **real private audio text-only** route being verified; do not claim SRT timestamps or WER. |
+| **Fun-ASR-Nano-2512** | https://huggingface.co/FunAudioLLM/Fun-ASR-Nano-2512 | Apache-2.0 (model card) | Official CPU GGUF / llama.cpp alternative exists, but a separately pinned binary/weights and CPU regression are needed | **Research only**. Official FunASR model selection notes GPU as the easiest flagship route; CPU use is possible via GGUF but not benchmarked on this user's audio. |
+| **Whisper Large-v3 (full)** | https://huggingface.co/openai/whisper-large-v3 | MIT (model card) | Already supported by `transcribe.py`, but larger CPU decode cost than Turbo | Structurally supported; user private source has not been rerun on full large-v3. |
+| **Whisper Large-v3 Turbo + Smart2** | Existing `main` and recorded private Runner evidence | MIT (Whisper weights) | Standard CPU runner + signed private roundtrip | **Production baseline**, no human-confirmed CER/WER. |
+
+**Evaluation design:** Do not choose the largest model by model-card WER on a different corpus. Compare on private mixed Mandarin/English recording(s) with a **human audio-listened reference**; until that exists, present only AI-reference disagreement, compute/memory, model download/reproducibility, and evidence of exact output type. SRT structural correctness and forced alignment are separate dimensions.
+
+**Security and costs:** Public GitHub repo contains code/synthetic tests only. Signed URLs in the existing control Issue reference **encrypted ciphertext**, expire, and reveal no plaintext. Neither a local Windows GPU nor finite hosted model API is necessary. All runner minutes, storage, downloads and source model terms remain subject to their own policies.
+
+**Source checking:** Qwen model card and antirez C inference repo checked 2026-11-22, and official FunASR model card plus model-selection guide checked same date. This catalog is a point-in-time selection, not proof that one model is globally the strongest.
