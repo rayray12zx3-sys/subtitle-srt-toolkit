@@ -62,7 +62,7 @@ Verified 2026-11-20 on **standard GitHub-hosted Ubuntu CPU runners** using stati
   measurements**. The public repo contains only evaluation code, not the private
   audio/transcripts/individual mismatch report.
 - It first applies Unicode NFKC, apostrophe/case normalization, then the bundled
-  offline OpenCC \`s2t\` script converter (when invoked via the fully installed
+  offline OpenCC `s2t` script converter (when invoked via the fully installed
   private environment). Chinese error units are individual Han characters,
   English units are English words or numbers, and a mixed-language diagnostic
   combines Han characters with intact English words. These are **not** the same
@@ -74,12 +74,12 @@ Verified 2026-11-20 on **standard GitHub-hosted Ubuntu CPU runners** using stati
   private error inspection, never the original recording.
 - When the reference is the older **Google AI-generated SRT or the unlistened
   AI-assisted correction**, the benchmark status is
-  \`AI_REFERENCE_DISAGREEMENT_ONLY\`, and the numeric results are labeled
+  `AI_REFERENCE_DISAGREEMENT_ONLY`, and the numeric results are labeled
   **difference rates**, explicitly **not CER/WER, quality grades or rankings**.
   Matching two ASR engines may mean the engines make the same mistake.
 - **Human-verified CER/WER remains NOT VERIFIED**. A real gold reference must
   be manually confirmed from the audio before permitting
-  \`reference-status=human-verified\`; the tool cannot listen to the source or
+  `reference-status=human-verified`; the tool cannot listen to the source or
   guarantee truth merely by a flag. Word-level timestamp accuracy is an
   independent and currently unproven metric.
 - Private reports must be written outside this public repository with
