@@ -1,5 +1,29 @@
 name: Private audio to SRT - ephemeral GitHub CPU runner
 on:
+  workflow_call:
+    inputs:
+      encrypted_drive_file_id:
+        type: string
+        required: true
+      output_public_key:
+        type: string
+        required: true
+      model:
+        type: string
+        required: true
+        default: large-v3-turbo
+      language:
+        type: string
+        required: true
+        default: auto
+      alignment:
+        type: string
+        required: true
+        default: 'off'
+      chunk_seconds:
+        type: number
+        required: true
+        default: 600
   workflow_dispatch:
     inputs:
       encrypted_drive_file_id:

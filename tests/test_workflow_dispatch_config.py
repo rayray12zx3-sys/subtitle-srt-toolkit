@@ -12,7 +12,8 @@ class WorkflowChoiceRegressionTests(unittest.TestCase):
     def test_optional_alignment_off_is_explicit_string(self):
         root = Path(__file__).resolve().parents[1]
         workflow = (root / ".github/workflows/cloud-handshake.yml").read_text("utf-8")
-        section = workflow.split("      alignment:\n", 1)[1].split("      chunk_seconds:", 1)[0]
+        dispatch = workflow.split("  workflow_dispatch:\n", 1)[1]
+        section = dispatch.split("      alignment:\n", 1)[1].split("      chunk_seconds:", 1)[0]
         self.assertRegex(section, r"(?m)^\s*default:\s*['\"]off['\"]\s*$")
         self.assertRegex(section, r"(?m)^\s*-\s*['\"]off['\"]\s*$")
         self.assertNotRegex(section, r"(?m)^\s*(?:default:\s*|-\s*)false\s*$")
