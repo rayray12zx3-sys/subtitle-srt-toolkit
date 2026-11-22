@@ -24,6 +24,38 @@ MAGIC = b'SRT2'
 INPUT_AAD = b'subtitle-srt-toolkit/input2'
 OUTPUT_AAD = b'subtitle-srt-toolkit/output2'
 
+
+def parse_alignment_metrics(output: str) -> dict:
+    """Parse only numeric alignment diagnostics, including TWO keys on one line.
+
+    The Whisper CLI combines attempted/succeeded values in a single status
+    line. Do not print or persist its stdout: it includes a private temp path.
+    """
+    allowed={
+        "ALIGNER_ATTEMPTED_CHUNKS":"attempted",
+        "ALIGNER_SUCCEEDED_CHUNKS":"succeeded",
+        "ALIGNER_FALLBACK_CHUNKS":"fallback",
+        "ALIGNER_BOUNDARY_COMPARISON_SAMPLES":"samples",
+        "ALIGNER_BOUNDARY_MEDIAN_ABS_SHIFT_SECONDS":"median",
+        "ALIGNER_BOUNDARY_P95_ABS_SHIFT_SECONDS":"p95",
+        "ALIGNER_BOUNDARY_MAX_ABS_SHIFT_SECONDS":"max",
+    }
+    stats={}
+    for match in re.finditer(r"(?<![A-Z_])(ALIGNER_[A-Z_]+)=(\d+(?:\.\d+)?)", output):
+        key=allowed.get(match.group(1))
+        if key is None:
+            continue
+        if key in stats:
+            raise RuntimeError("Duplicate alignment diagnostic")
+        stats[key]=float(match.group(2))
+    if any(k not in stats for k in
+           ("attempted","succeeded","fallback","samples")):
+        raise RuntimeError("Alignment diagnostic counters missing")
+    if stats["attempted"] != stats["succeeded"] + stats["fallback"]:
+        raise RuntimeError("Inconsistent alignment chunk counts")
+    return stats
+
+
 def pack(data, pub, aad):
     key = os.urandom(32)
     encrypted_key = pub.encrypt(key,padding.OAEP(mgf=padding.MGF1(hashes.SHA256()),algorithm=hashes.SHA256(),label=None))
@@ -176,26 +208,7 @@ def main():
             outcome=subprocess.run(command,env=env,check=True,
                                    stdout=subprocess.PIPE,text=True)
             if aligner_dir is not None:
-                stats={}
-                allowed={
-                    "ALIGNER_ATTEMPTED_CHUNKS":"attempted",
-                    "ALIGNER_SUCCEEDED_CHUNKS":"succeeded",
-                    "ALIGNER_FALLBACK_CHUNKS":"fallback",
-                    "ALIGNER_BOUNDARY_COMPARISON_SAMPLES":"samples",
-                    "ALIGNER_BOUNDARY_MEDIAN_ABS_SHIFT_SECONDS":"median",
-                    "ALIGNER_BOUNDARY_P95_ABS_SHIFT_SECONDS":"p95",
-                    "ALIGNER_BOUNDARY_MAX_ABS_SHIFT_SECONDS":"max",
-                }
-                for line in outcome.stdout.splitlines():
-                    match=re.fullmatch(r"(ALIGNER_[A-Z_]+)=(\d+(?:\.\d+)?)",line)
-                    if match and match.group(1) in allowed:
-                        stats[allowed[match.group(1)]]=float(match.group(2))
-                if any(key not in stats for key in
-                       ("attempted","succeeded","fallback","samples")):
-                    raise RuntimeError("Alignment diagnostic counters missing")
-                if stats["attempted"] != stats["succeeded"]+stats["fallback"]:
-                    raise RuntimeError("Inconsistent alignment chunk counts")
-                alignment_reports.append(stats)
+                alignment_reports.append(parse_alignment_metrics(outcome.stdout))
             report=validate_delivery(audio,srt)
             if report['status']!='OUTPUT_VALIDATED_NOT_YET_DELIVERED':
                 raise SystemExit('BLOCKED: Invalid SRT in batch')
