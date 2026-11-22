@@ -14,11 +14,12 @@ jobs:
       github.event.issue.user.login == 'rayray12zx3-sys' &&
       github.event.comment.user.login == 'rayray12zx3-sys' &&
       github.event.issue.pull_request == null &&
-      (github.event.comment.body == '/srt-check' || startsWith(github.event.comment.body, '/srt-run '))
+      (github.event.comment.body == '/srt-check' || startsWith(github.event.comment.body, '/srt-run ') || startsWith(github.event.comment.body, '/srt-probe '))
     runs-on: ubuntu-latest
     timeout-minutes: 3
     outputs:
       smoke: ${{ steps.parse.outputs.smoke }}
+      probe_url: ${{ steps.parse.outputs.probe_url }}
       transport: ${{ steps.parse.outputs.transport }}
       drive_id: ${{ steps.parse.outputs.encrypted_drive_file_id }}
       return_key: ${{ steps.parse.outputs.output_public_key }}
@@ -34,12 +35,21 @@ jobs:
   check:
     name: No-model owner comment smoke test
     needs: validate
-    if: needs.validate.outputs.smoke == 'true'
+    if: needs.validate.outputs.smoke == 'true' || needs.validate.outputs.smoke == 'probe'
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
       - name: Confirm comment-based dispatch
+        if: needs.validate.outputs.smoke == 'true'
         run: echo SRT_COMMENT_DISPATCH_SMOKE_PASS
+      - uses: actions/checkout@v4
+        if: needs.validate.outputs.smoke == 'probe'
+      - name: Probe signed encrypted object without model download
+        if: needs.validate.outputs.smoke == 'probe'
+        env:
+          SIGNED_CIPHER_URL: ${{ needs.validate.outputs.probe_url }}
+        run: |
+          python -c 'import os; from tools.signed_cipher_transport import fetch_signed_ciphertext; fetch_signed_ciphertext(os.environ["SIGNED_CIPHER_URL"]); print("SRT_SIGNED_CIPHER_URL_PROBE_PASS")'
   transcribe:
     name: Real model runner using encrypted Drive packet
     needs: validate
