@@ -61,7 +61,8 @@ def fetch_public_drive_blob(file_id):
 
 def main():
     p=argparse.ArgumentParser()
-    p.add_argument('--drive-id',required=True)
+    p.add_argument('--drive-id', default='')
+    p.add_argument('--transport', choices=['drive', 'signed-url'], default='drive')
     p.add_argument('--output-pub',required=True)
     p.add_argument('--model',choices=list(MODEL_REPOS),default='large-v3-turbo')
     p.add_argument('--alignment',choices=['off','qwen'],default='off')
@@ -69,6 +70,16 @@ def main():
     p.add_argument('--chunk-seconds',type=int,default=600)
     p.add_argument('--max-wait',type=int,default=1800)
     a=p.parse_args()
+    if a.transport == 'drive' and not a.drive_id:
+        p.error('--drive-id is required for drive transport')
+    if a.transport == 'signed-url':
+        if a.drive_id:
+            p.error('--drive-id is not allowed with signed-url transport')
+        if not (os.environ.get('GITHUB_TOKEN') and os.environ.get('GITHUB_RUN_ID')):
+            p.error('GitHub Actions token and run ID are required')
+        from tools.signed_cipher_transport import find_packet_urls, fetch_signed_ciphertext
+        run_id = int(os.environ['GITHUB_RUN_ID'])
+        issue_token = os.environ['GITHUB_TOKEN']
     if a.output_pub.startswith('rsa-n:'):
         encoded = a.output_pub[6:]
         modulus_bytes = base64.urlsafe_b64decode(encoded + '=' * (-len(encoded) % 4))
@@ -84,12 +95,24 @@ def main():
     source_bytes=None
     began=time.monotonic()
     while time.monotonic()-began < a.max_wait:
-        blob=fetch_public_drive_blob(a.drive_id)
-        if blob:
+        if a.transport == 'signed-url':
+            try:
+                candidates = [fetch_signed_ciphertext(url)
+                              for url in find_packet_urls(run_id, issue_token)]
+            except Exception:
+                # Transient GitHub/short-lived link errors must not expose tokens.
+                candidates = []
+        else:
+            candidates = [fetch_public_drive_blob(a.drive_id)]
+        for blob in candidates:
+            if not blob:
+                continue
             try:
                 source_bytes=unpack(blob,in_priv,INPUT_AAD)
-            except (ValueError,Exception):
-                pass
+                break
+            except Exception:
+                # Authenticity failure: never use invalid packets.
+                continue
         if source_bytes:
             break
         time.sleep(10)
