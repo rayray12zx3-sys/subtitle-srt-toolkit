@@ -19,6 +19,7 @@ jobs:
     timeout-minutes: 3
     outputs:
       smoke: ${{ steps.parse.outputs.smoke }}
+      transport: ${{ steps.parse.outputs.transport }}
       drive_id: ${{ steps.parse.outputs.encrypted_drive_file_id }}
       return_key: ${{ steps.parse.outputs.output_public_key }}
       model: ${{ steps.parse.outputs.model }}
@@ -45,8 +46,10 @@ jobs:
     if: needs.validate.outputs.smoke == 'false'
     permissions:
       contents: read
+      issues: read
     uses: ./.github/workflows/cloud-handshake.yml
     with:
+      transport: ${{ needs.validate.outputs.transport }}
       encrypted_drive_file_id: ${{ needs.validate.outputs.drive_id }}
       output_public_key: ${{ needs.validate.outputs.return_key }}
       model: ${{ needs.validate.outputs.model }}
