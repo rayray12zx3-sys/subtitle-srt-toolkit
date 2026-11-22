@@ -84,10 +84,17 @@ class SmartSemanticTests(unittest.TestCase):
         self.assertEqual(_text(first), "你可以用其他的形容詞來形容心情不好")
 
     def test_english_punctuation_glue_gets_display_space(self):
-        seq = make(["The worst part is, ", "she's right.Well", "maybe "])
+        seq = make(["The worst part is, ", "she's right.Well", " maybe "])
         self.assertIn("right. Well", _text(seq))
         lines = break_lines(seq, line_chars=80, max_lines=2)
         self.assertEqual(lines, ["The worst part is, she's right. Well maybe"])
+
+    def test_whisper_english_subword_fragments_are_never_broken(self):
+        fragments = make(["L", "ala", " was", " here"])
+        self.assertEqual(_text(fragments), "Lala was here")
+        self.assertEqual(_text(make(["W", "ish", " me", " luck"])), "Wish me luck")
+        self.assertEqual(_text(make(["right.", "Well", " maybe"])),
+                         "right. Well maybe")
 
     def test_lexical_guard_applies_inside_two_line_layout(self):
         words = make(["今天", "我們", "學", "形", "容詞", "有趣", "也很", "實用"])
