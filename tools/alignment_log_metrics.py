@@ -17,7 +17,7 @@ def parse_alignment_metrics(output: str) -> dict:
         "ALIGNER_BOUNDARY_MAX_ABS_SHIFT_SECONDS":"max",
     }
     stats={}
-    for match in re.finditer(r"(?<![A-Z_])(ALIGNER_[A-Z_]+)=(\d+(?:\.\d+)?)", output):
+    for match in re.finditer(r"(?<![A-Z_])(ALIGNER_[A-Z0-9_]+)=(\d+(?:\.\d+)?)", output):
         key=allowed.get(match.group(1))
         if key is None:
             continue
