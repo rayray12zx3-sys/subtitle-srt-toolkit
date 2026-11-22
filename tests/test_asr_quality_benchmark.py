@@ -101,6 +101,26 @@ class QualityBenchmarkTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 read_private_text(Path(temp) / "example.mp3")
 
+    def test_drive_srt_txt_is_parsed_as_srt_not_timestamps(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "from_drive.srt.txt"
+            path.write_text(
+                "1\n00:00:00,000 --> 00:00:01,000\nHello world\n\n"
+                "2\n00:00:01,000 --> 00:00:02,000\n你好\n", "utf-8"
+            )
+            self.assertEqual(read_private_text(path), "Hello world 你好")
+            self.assertEqual(units(read_private_text(path))["english"], ["hello", "world"])
+            self.assertEqual(units(read_private_text(path))["han"], ["你", "好"])
+
+    def test_real_offline_opencc_if_installed(self):
+        try:
+            from opencc import OpenCC
+        except ImportError:
+            self.skipTest("Optional offline OpenCC package not in local environment")
+        result = compare("今天說話", "今天说话", reference_status="ai-unverified",
+                         normalizer=OpenCC("s2t").convert)
+        self.assertEqual(result["scores"]["han"]["difference_rate"], 0.0)
+
     def test_private_report_is_atomic_and_restricted(self):
         with tempfile.TemporaryDirectory() as temp:
             dest = Path(temp) / "sub" / "report.json"
