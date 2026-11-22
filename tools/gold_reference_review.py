@@ -255,6 +255,7 @@ def finalize(manifest: dict, audio: Path, source_srt: Path, *,
         "text_reviewed": status["text_confirmed"],
         "time_reviewed": status["timing_confirmed"],
         "word_timestamp_accuracy": "NOT_MEASURED",
+        "gold_sha256": hashlib.sha256(result.encode("utf-8")).hexdigest(),
     }
     return result, report
 
