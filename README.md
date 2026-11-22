@@ -190,3 +190,42 @@ The previous GitHub comment command removed paid browser usage for **triggering*
 6. **No-model network diagnostic:** only the owner may post `/srt-probe <SHORT_LIVED_SIGNED_CIPHERTEXT_URL>`; runner verifies that a signed `SRT2` ciphertext URL can actually be fetched. It never downloads a speech model or consumes paid inference. Do not pass raw media URLs or private recordings.
 
 **Trust boundary:** the signed URL is posted in a PUBLIC GitHub comment, so even though it references only authenticated ciphertext and automatically expires, it is briefly visible to anyone. Do not use if link publication of ciphertext (even temporarily) is forbidden by your privacy policy. Both a live `/srt-probe` and one real private `/srt-run` have passed; **future availability and platform quotas are still conditional** because connected tools can change URL expiry or network reachability. No unattended product-level one-click claim follows merely from the code being merged. The private Drive staging file must be deleted; expired Issue URLs remain visible but no longer authorize download.
+
+## Private bilingual ASR quality benchmark (no inference API)
+
+The offline program [tools/asr_quality_benchmark.py](tools/asr_quality_benchmark.py)
+compares the **existing private SRTs** with a separately identified reference.
+It requires a clear provenance status for that reference and never publishes
+audio, SRT, transcript differences, or private report data to GitHub.
+
+From an authorized **assistant private cloud workspace** (not the user's Windows
+and not in this public repository), with the existing offline \`requirements.txt\`
+environment installed:
+
+\`\`\`text
+python -m tools.asr_quality_benchmark --reference /private/ai_reference.srt --reference-status ai-unverified --reference-origin "Existing AI-generated reference; not human checked" --candidate /private/turbo.srt --candidate /private/breeze.srt --output /private/benchmark.json
+\`\`\`
+
+- Chinese characters are counted separately, English words and numerals as
+  whole tokens; Unicode punctuation/spacing and case are normalized and the
+  offline OpenCC \`s2t\` converter normalizes Simplified/Traditional Han forms.
+  Every comparison uses **exact Levenshtein edit distance**, not a fuzzy
+  similarity estimate; output differences are **relative to the stated reference**.
+- If \`reference-status=ai-unverified\`, the report is explicitly
+  \`AI_REFERENCE_DISAGREEMENT_ONLY\`: it contains **no human CER/WER** and
+  cannot designate an accuracy winner. This is the correct status for the
+  stored Google AI reference and the AI-corrected draft.
+- Only an explicitly sourced, **human-listened and corrected** reference
+  should use \`reference-status=human-verified\`. In that case the report
+  exposes \`han_cer\`, \`english_wer\` and \`mixed_unit_error_rate\` measured
+  against that reference. Human origin is a caller declaration; code cannot
+  independently certify real human listening. These rates are **text accuracy
+  only**, not exact audio word-alignment accuracy.
+- The private JSON report may contain short mismatch snippets, so the program
+  refuses report paths inside this public repository and prints **no transcript**
+  or mismatch text to standard output. The unit tests use synthetic material
+  only. The source files remain owner-only. For 30-minute material, split into
+  independently verified reference segments (the exact DP has a bounded
+  8,000-unit limit per comparison), and do not present a fake overall rate.
+- Do not automatically overwrite the existing 24-cue approved SRT with a
+  different 23-cue model run solely on the basis of AI agreement.
