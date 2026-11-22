@@ -81,6 +81,9 @@ class HumanReviewGateTests(unittest.TestCase):
         self.assertIn("00:00:00,120 --> 00:00:01,000", result)
         self.assertIn("Hello, there", result)
         self.assertEqual(audit["status"], "HUMAN_SELF_ATTESTED_TEXT_AND_CUE_TIMING")
+        import hashlib
+        self.assertEqual(audit["gold_sha256"],
+                         hashlib.sha256(result.encode("utf-8")).hexdigest())
         self.assertIn("NOT independently", audit["claim"])
         self.assertEqual(len(parse_srt(result)), 2)
 
