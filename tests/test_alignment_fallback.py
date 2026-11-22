@@ -56,6 +56,8 @@ class AlignmentFallbackTests(unittest.TestCase):
         stdout,report=self._run(Broken())
         self.assertIn("ALIGNER_SUCCEEDED_CHUNKS=0",stdout)
         self.assertIn("ALIGNER_FALLBACK_CHUNKS=2",stdout)
+        self.assertIn("ALIGNER_BOUNDARY_COMPARISON_SAMPLES=0",stdout)
+        self.assertIn("ALIGNER_NO_ACCEPTED_ALIGNMENT",stdout)
         self.assertGreaterEqual(report["cues"],1)
         self.assertIn("今天",self.destination.read_text("utf-8-sig"))
 
@@ -67,6 +69,8 @@ class AlignmentFallbackTests(unittest.TestCase):
                         SimpleNamespace(word="天",start=.29,end=.54)]
         stdout,report=self._run(Good())
         self.assertIn("ALIGNER_SUCCEEDED_CHUNKS=2",stdout)
+        self.assertIn("ALIGNER_BOUNDARY_COMPARISON_SAMPLES=4",stdout)
+        self.assertIn("ALIGNER_BOUNDARY_MEDIAN_ABS_SHIFT_SECONDS=",stdout)
         self.assertGreaterEqual(report["cues"],1)
         self.assertIn("今天今天",self.destination.read_text("utf-8-sig"))
         self.assertIn("00:00:00,100",self.destination.read_text("utf-8-sig"))
