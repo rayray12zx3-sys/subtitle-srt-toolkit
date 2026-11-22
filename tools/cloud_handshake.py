@@ -154,6 +154,7 @@ def main():
         qa_fast=0
         qa_short=0
         qa_layout_warnings=0
+        alignment_reports=[]
         for clip_name,opus_bytes in inputs:
             folder=root/clip_name
             folder.mkdir()
@@ -170,7 +171,31 @@ def main():
                      '--traditional','--output',str(srt)]
             if aligner_dir is not None:
                 command.extend(['--aligner-dir',str(aligner_dir)])
-            subprocess.run(command,env=env,check=True,stdout=subprocess.DEVNULL)
+            # Capture only aggregate counters. transcribe.py stdout includes a
+            # private temporary output path; never stream it into public logs.
+            outcome=subprocess.run(command,env=env,check=True,
+                                   stdout=subprocess.PIPE,text=True)
+            if aligner_dir is not None:
+                stats={}
+                allowed={
+                    "ALIGNER_ATTEMPTED_CHUNKS":"attempted",
+                    "ALIGNER_SUCCEEDED_CHUNKS":"succeeded",
+                    "ALIGNER_FALLBACK_CHUNKS":"fallback",
+                    "ALIGNER_BOUNDARY_COMPARISON_SAMPLES":"samples",
+                    "ALIGNER_BOUNDARY_MEDIAN_ABS_SHIFT_SECONDS":"median",
+                    "ALIGNER_BOUNDARY_P95_ABS_SHIFT_SECONDS":"p95",
+                    "ALIGNER_BOUNDARY_MAX_ABS_SHIFT_SECONDS":"max",
+                }
+                for line in outcome.stdout.splitlines():
+                    match=re.fullmatch(r"(ALIGNER_[A-Z_]+)=(\d+(?:\.\d+)?)",line)
+                    if match and match.group(1) in allowed:
+                        stats[allowed[match.group(1)]]=float(match.group(2))
+                if any(key not in stats for key in
+                       ("attempted","succeeded","fallback","samples")):
+                    raise RuntimeError("Alignment diagnostic counters missing")
+                if stats["attempted"] != stats["succeeded"]+stats["fallback"]:
+                    raise RuntimeError("Inconsistent alignment chunk counts")
+                alignment_reports.append(stats)
             report=validate_delivery(audio,srt)
             if report['status']!='OUTPUT_VALIDATED_NOT_YET_DELIVERED':
                 raise SystemExit('BLOCKED: Invalid SRT in batch')
@@ -190,6 +215,23 @@ def main():
         print('SRT_AUTO_QA_LAYOUT_WARNINGS='+str(qa_layout_warnings),flush=True)
         print('SRT_MODEL_ID='+a.model,flush=True)
         print('SRT_ALIGNMENT_MODE='+a.alignment,flush=True)
+        if a.alignment=='qwen':
+            print('SRT_QWEN_ATTEMPTED_CHUNKS='+str(
+                  int(sum(x["attempted"] for x in alignment_reports))),flush=True)
+            print('SRT_QWEN_SUCCEEDED_CHUNKS='+str(
+                  int(sum(x["succeeded"] for x in alignment_reports))),flush=True)
+            print('SRT_QWEN_FALLBACK_CHUNKS='+str(
+                  int(sum(x["fallback"] for x in alignment_reports))),flush=True)
+            print('SRT_QWEN_BOUNDARY_COMPARISON_SAMPLES='+str(
+                  int(sum(x["samples"] for x in alignment_reports))),flush=True)
+            # Median/P95 below are per-clip, NOT pooled statistics for batches.
+            for name in ("median","p95","max"):
+                vals=[x[name] for x in alignment_reports if name in x]
+                if vals:
+                    print("SRT_QWEN_PER_CLIP_"+name.upper()+"_ABS_SHIFT_SECONDS="+
+                          ",".join(f"{v:.3f}" for v in vals),flush=True)
+            if not any(x["succeeded"] for x in alignment_reports):
+                print("SRT_QWEN_NO_VALID_ALIGNMENT_USED_WHISPER_FALLBACK",flush=True)
         print(f'SRT_MODEL_DOWNLOAD_SECONDS={download_sec:.2f}',flush=True)
         print(f'SRT_ASR_GENERATION_SECONDS={asr_sec:.2f}',flush=True)
         print('OUTPUT_VALIDATED_NOT_YET_DELIVERED',flush=True)
