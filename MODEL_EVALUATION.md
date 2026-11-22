@@ -54,3 +54,36 @@ Verified 2026-11-20 on **standard GitHub-hosted Ubuntu CPU runners** using stati
 - **Selection for this round: keep Large-v3 Turbo as production default**, Qwen3-ASR 0.6B as optional private second-opinion text engine, Small as fallback; retain Breeze and FireRed as research candidates only. FireRed did not outperform on this one test. More representative recordings and verified human reference transcriptions are required for any confident CER/WER or best-overall-model selection.
 
 **This requested comparison milestone is COMPLETE**: all four SRT-capable models (Small, Turbo, Breeze, FireRed) have now been tested on the same real private recording, with real SRT artifacts and aggregate logs. Qwen3-ASR 1.7B and Qwen ForcedAligner are not claimed as full real-SRT successes; they remain independent unverified optional experiments.
+
+## 2026-11-22 — reproducible private mixed-language evaluation, without false accuracy claims
+
+- New [offline bilingual benchmark](tools/asr_quality_benchmark.py) and synthetic
+  tests distinguish **AI reference agreement** from **human-reference error
+  measurements**. The public repo contains only evaluation code, not the private
+  audio/transcripts/individual mismatch report.
+- It first applies Unicode NFKC, apostrophe/case normalization, then the bundled
+  offline OpenCC \`s2t\` script converter (when invoked via the fully installed
+  private environment). Chinese error units are individual Han characters,
+  English units are English words or numbers, and a mixed-language diagnostic
+  combines Han characters with intact English words. These are **not** the same
+  as unqualified overall ASR WER.
+- All error counts use **exact Levenshtein edit distance relative to one
+  explicitly supplied reference**. Missing words, extra words and substitutions
+  all contribute; no SequenceMatcher "percentage agreement" is substituted for
+  edit-distance statistics. The output also includes bounded diff regions for
+  private error inspection, never the original recording.
+- When the reference is the older **Google AI-generated SRT or the unlistened
+  AI-assisted correction**, the benchmark status is
+  \`AI_REFERENCE_DISAGREEMENT_ONLY\`, and the numeric results are labeled
+  **difference rates**, explicitly **not CER/WER, quality grades or rankings**.
+  Matching two ASR engines may mean the engines make the same mistake.
+- **Human-verified CER/WER remains NOT VERIFIED**. A real gold reference must
+  be manually confirmed from the audio before permitting
+  \`reference-status=human-verified\`; the tool cannot listen to the source or
+  guarantee truth merely by a flag. Word-level timestamp accuracy is an
+  independent and currently unproven metric.
+- Private reports must be written outside this public repository with
+  restrictive filesystem permissions. The script prints no transcripts or
+  mismatch snippets to public logs. Do not upload generated JSON to GitHub.
+- The latest true-source Turbo+Smart2 and prior candidate results remain valid
+  functional acceptance, not evidence of human-word-accuracy superiority.
