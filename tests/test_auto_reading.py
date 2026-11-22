@@ -52,6 +52,16 @@ class AutoReadingTests(unittest.TestCase):
             self.assertNotIn("transcript",report)
             self.assertTrue(report["layout_ok"])
 
+    def test_quality_detects_split_english_contraction(self):
+        with tempfile.TemporaryDirectory() as d:
+            p=Path(d)/"bad.srt"
+            p.write_text("1\n00:00:00,000 --> 00:00:02,000\n"
+                         "The worst part is, she\n's right.Well\n", encoding="utf-8")
+            result=analyze_srt(p,line_chars=30,max_lines=2)
+            self.assertEqual(result["split_contractions"],1)
+            self.assertEqual(result["glued_english_sentences"],1)
+            self.assertFalse(result["layout_ok"])
+
     def test_no_hidden_word_rewriting(self):
         words=[tok("非常",0.,.35),tok("快速",.35,.68),tok("的",.7,.78),
                tok("測試。",.8,1.1),tok("接著",1.45,1.7),tok("看看",1.71,2.1)]

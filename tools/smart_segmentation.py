@@ -94,6 +94,13 @@ def _protected_boundaries(words):
     for i, offset in enumerate(offsets, 1):
         left = words[i - 1].word.rstrip()
         right = words[i].word.lstrip()
+        # English clitics can be separate Whisper-timed pieces. Do not make
+        # a subtitle or line break between she|'s, we|'re, do|n't, etc.
+        if (left and right and re.search(r"[A-Za-z]$", left)
+                and re.match(r"^(?:['’](?:s|re|ve|ll|d|m|t)|n['’]t)\b",
+                             right, flags=re.IGNORECASE)):
+            protected.add(i)
+            continue
         if not (left and right and "\u4e00" <= left[-1] <= "\u9fff"
                 and "\u4e00" <= right[0] <= "\u9fff"):
             continue
@@ -240,6 +247,33 @@ def segment_words(words, max_chars=22, max_duration=4.0,
     return _boundaries(filtered, max_chars, max_duration, gap, line_chars, max_lines)
 
 
+def repair_split_contraction_lines(lines, line_chars=12):
+    """Display-only safe reflow of an English clitic split across 2 lines.
+
+    For example 'The worst part is, she' / "'s right. Well" becomes
+    'The worst part is,' / "she's right. Well", without changing the source
+    words, cue timestamps, or more than two text lines. Fail closed if
+    no safe line-width-constrained reflow exists.
+    """
+    if len(lines) != 2:
+        return lines
+    left, right = lines
+    if not re.match(r"^(?:['’](?:s|re|ve|ll|d|m|t)|n['’]t)\b", right,
+                    re.IGNORECASE):
+        return lines
+    match = re.search(r"[A-Za-z]+$", left)
+    if match is None:
+        return lines
+    shortened = left[:match.start()].rstrip()
+    joined = match.group() + right
+    if not shortened:
+        return [left + right] if visual_width(left + right) <= 2*line_chars+2 else lines
+    if (visual_width(shortened) <= 2*line_chars+2
+            and visual_width(joined) <= 2*line_chars+2):
+        return [shortened, joined]
+    return lines
+
+
 def break_lines(words, line_chars=12, max_lines=2):
     """Return original word pieces with optional line split; no token splitting."""
     if max_lines == 1 or len(words) < 2:
@@ -268,4 +302,4 @@ def break_lines(words, line_chars=12, max_lines=2):
     score, overflow, left, right = min(choices, key=lambda x: x[0])
     if overflow and visual_width(full) <= limit:
         return [full]
-    return [left, right]
+    return repair_split_contraction_lines([left, right], line_chars=line_chars)

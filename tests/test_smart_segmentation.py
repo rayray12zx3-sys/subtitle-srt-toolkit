@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 
-from tools.smart_segmentation import segment_words, break_lines, visual_width, _protected_boundaries, _text
+from tools.smart_segmentation import segment_words, break_lines, visual_width, _protected_boundaries, _text, repair_split_contraction_lines
 from transcribe import write_srt
 
 
@@ -103,6 +103,28 @@ class SmartSemanticTests(unittest.TestCase):
         self.assertFalse(result[0].endswith("形"))
         self.assertFalse(result[0].endswith("心"))
         self.assertIn("形容詞", "".join(result))
+
+    def test_safe_display_only_reflow_of_existing_srt_contraction(self):
+        original = ["The worst part is, she", "'s right. Well"]
+        fixed = repair_split_contraction_lines(original, line_chars=12)
+        self.assertEqual(fixed, ["The worst part is,", "she's right. Well"])
+        self.assertEqual("".join(original).replace(" ", ""), "".join(fixed).replace(" ", ""))
+        self.assertTrue(all(visual_width(line) <= 26 for line in fixed))
+        self.assertEqual(repair_split_contraction_lines(["Hello", " everyone"], 12),
+                         ["Hello", " everyone"])
+
+    def test_english_contractions_do_not_split_across_lines(self):
+        words=make(["The worst part is, ", "she", "'s", " right.", " Well"])
+        protected=_protected_boundaries(words)
+        self.assertIn(2, protected)  # she|'s is ONE English word
+        lines=break_lines(words, line_chars=12, max_lines=2)
+        self.assertNotIn("she\n's", "\n".join(lines))
+        self.assertIn("she's", "".join(lines))
+
+    def test_other_english_clitics_protected(self):
+        seq=make(["I ", "do", "n't", " know", " where ", "we", "'re"])
+        self.assertIn(2, _protected_boundaries(seq))
+        self.assertIn(6, _protected_boundaries(seq))
 
     def test_invalid_limits_rejected(self):
         with self.assertRaises(ValueError):
