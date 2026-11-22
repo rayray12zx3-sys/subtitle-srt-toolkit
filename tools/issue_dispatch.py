@@ -17,7 +17,8 @@ ISSUE_NUMBER = 1
 DRIVE_ID_RE = re.compile(r"[A-Za-z0-9_-]{15,100}\Z", re.ASCII)
 RSA_N_RE = re.compile(r"rsa-n:([A-Za-z0-9_-]{342})\Z", re.ASCII)
 MODELS = frozenset(("large-v3-turbo", "small", "tiny", "base", "medium",
-                    "large-v3", "breeze-asr-25", "qwen3-asr-1.7b"))
+                    "large-v3", "breeze-asr-25", "qwen3-asr-1.7b",
+                    "fun-asr-nano-2512"))
 LANGUAGES = frozenset(("auto", "zh", "en"))
 ALIGNMENTS = frozenset(("off", "qwen"))
 ALLOWED = frozenset(("transport", "encrypted_drive_file_id", "output_public_key",
@@ -85,6 +86,9 @@ def validate_command(body):
     chunk_seconds = data.get("chunk_seconds", 600)
     if model not in MODELS or language not in LANGUAGES or alignment not in ALIGNMENTS:
         raise ValueError("Unsupported transcription option")
+    if model in ("qwen3-asr-1.7b", "fun-asr-nano-2512") and (
+            language != "auto" or alignment != "off"):
+        raise ValueError("Text benchmark candidates require language=auto and alignment=off")
     if type(chunk_seconds) is not int or chunk_seconds not in (0, *range(60, 1801)):
         raise ValueError("Invalid chunk seconds")
     return {
