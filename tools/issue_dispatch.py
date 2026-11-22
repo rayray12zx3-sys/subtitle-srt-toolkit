@@ -17,7 +17,7 @@ ISSUE_NUMBER = 1
 DRIVE_ID_RE = re.compile(r"[A-Za-z0-9_-]{15,100}\Z", re.ASCII)
 RSA_N_RE = re.compile(r"rsa-n:([A-Za-z0-9_-]{342})\Z", re.ASCII)
 MODELS = frozenset(("large-v3-turbo", "small", "tiny", "base", "medium",
-                    "large-v3", "breeze-asr-25"))
+                    "large-v3", "breeze-asr-25", "qwen3-asr-1.7b"))
 LANGUAGES = frozenset(("auto", "zh", "en"))
 ALIGNMENTS = frozenset(("off", "qwen"))
 ALLOWED = frozenset(("transport", "encrypted_drive_file_id", "output_public_key",

@@ -15,6 +15,7 @@ from pathlib import Path
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives import serialization
 from tools.cloud_handshake import pack, unpack, fetch_public_drive_blob, INPUT_AAD, OUTPUT_AAD
+from tools.signed_cipher_transport import find_packet_urls, fetch_signed_ciphertext, publish_runner_public_key
 
 PINNED_QWEN_C_COMMIT = "924694251d9e0f18e5d86bbd06aa3ab5f870002d"
 
@@ -24,26 +25,57 @@ def run_command(argv, **kwargs):
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--model-size", choices=["small", "large"], default="small")
-    p.add_argument("--drive-id", required=True)
+    p.add_argument("--drive-id", default="")
+    p.add_argument("--transport", choices=["drive", "signed-url"], default="drive")
     p.add_argument("--output-pub", required=True)
     p.add_argument("--max-wait", type=int, default=1800)
     args = p.parse_args()
-    recipient = serialization.load_der_public_key(base64.b64decode(args.output_pub, validate=True))
+    if args.transport == "drive" and not args.drive_id:
+        p.error("--drive-id required for drive transport")
+    if args.transport == "signed-url" and args.drive_id:
+        p.error("signed-url must not contain a Drive file ID")
+    if args.transport == "signed-url" and not (os.environ.get("GITHUB_TOKEN") and os.environ.get("GITHUB_RUN_ID")):
+        p.error("GitHub Actions token/run ID required for signed-url transport")
+    if args.output_pub.startswith("rsa-n:"):
+        from cryptography.hazmat.primitives.asymmetric import rsa
+        encoded = args.output_pub[6:]
+        modulus = base64.urlsafe_b64decode(encoded + "=" * (-len(encoded) % 4))
+        if len(modulus) != 256 or not modulus[0] & 128 or not modulus[-1] & 1:
+            p.error("Invalid RSA-2048 public modulus")
+        recipient = rsa.RSAPublicNumbers(65537, int.from_bytes(modulus, "big")).public_key()
+    else:
+        recipient = serialization.load_der_public_key(base64.b64decode(args.output_pub, validate=True))
     receiver = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     pub = receiver.public_key().public_bytes(serialization.Encoding.DER,
                                              serialization.PublicFormat.SubjectPublicKeyInfo)
-    print("QWEN_INPUT_PUBLIC_KEY_B64=" + base64.b64encode(pub).decode("ascii"), flush=True)
+    public_b64 = base64.b64encode(pub).decode("ascii")
+    print("QWEN_INPUT_PUBLIC_KEY_B64=" + public_b64, flush=True)
+    if args.transport == "signed-url":
+        publish_runner_public_key(int(os.environ["GITHUB_RUN_ID"]), public_b64,
+                                  os.environ["GITHUB_TOKEN"])
+        print("QWEN_PUBLIC_KEY_PUBLISHED_TO_CONTROL_ISSUE", flush=True)
     print("WAITING_FOR_ENCRYPTED_INPUT", flush=True)
 
     source_bytes = None
     started = time.monotonic()
     while time.monotonic() - started < args.max_wait:
-        blob = fetch_public_drive_blob(args.drive_id)
-        if blob:
+        if args.transport == "signed-url":
+            try:
+                urls = find_packet_urls(int(os.environ["GITHUB_RUN_ID"]), os.environ["GITHUB_TOKEN"])
+                candidates = [fetch_signed_ciphertext(url) for url in urls[:3]]
+            except Exception:
+                # Expiring links or temporary API errors must never reveal tokens.
+                candidates = []
+        else:
+            candidates = [fetch_public_drive_blob(args.drive_id)]
+        for blob in candidates:
+            if not blob:
+                continue
             try:
                 source_bytes = unpack(blob, receiver, INPUT_AAD)
-            except (ValueError, Exception):
-                pass
+                break
+            except Exception:
+                continue
         if source_bytes:
             break
         time.sleep(10)
@@ -82,7 +114,7 @@ def main():
         text = result.stdout.strip()
         if len(text) < 20:
             raise SystemExit("BLOCKED: Qwen produced insufficient transcript text")
-        payload = json.dumps({"engine": "qwen3-asr-0.6b" if args.model_size == "small" else "qwen3-asr-1.7b", "transcript": text},
+        payload = json.dumps({"engine": "qwen3-asr-0.6b" if args.model_size == "small" else "qwen3-asr-1.7b", "transcript": text, "timings": "none", "reference_status": "ai-unverified"},
                              ensure_ascii=False).encode("utf-8")
         print("QWEN_OUTPUT_CIPHER_B64=" + base64.b64encode(pack(payload, recipient, OUTPUT_AAD)).decode("ascii"),
               flush=True)

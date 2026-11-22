@@ -47,7 +47,7 @@ on:
         type: string
         required: true
       model:
-        description: 'Locally executed open-source Whisper weights'
+        description: 'Offline open-weight ASR model; Qwen1.7B is text-only benchmark (not SRT)'
         type: choice
         required: true
         default: large-v3-turbo
@@ -59,6 +59,7 @@ on:
           - large-v3
           - large-v3-turbo
           - breeze-asr-25
+          - qwen3-asr-1.7b
       language:
         description: 'Auto detect, or force Chinese/English'
         type: choice
@@ -100,12 +101,17 @@ jobs:
       - name: Install offline inference packages
         run: |
           python -m pip install -r requirements.txt 'cryptography>=42,<48' huggingface_hub
+      - name: Install pinned Qwen3-ASR C++ CPU build dependencies
+        if: ${{ inputs.model == 'qwen3-asr-1.7b' }}
+        run: |
+          sudo apt-get install -y -qq build-essential libopenblas-dev git curl
       - name: Install optional official Qwen CPU alignment stack
         if: ${{ inputs.alignment == 'qwen' }}
         run: |
           python -m pip install 'torch==2.8.0' --index-url https://download.pytorch.org/whl/cpu
           python -m pip install 'transformers>=5.13.0,<6' librosa sentencepiece
       - name: Generate ephemeral keys, privately transcribe on GitHub and encrypt output
+        if: ${{ inputs.model != 'qwen3-asr-1.7b' }}
         env:
           DRIVE_ID: ${{ inputs.encrypted_drive_file_id }}
           INPUT_TRANSPORT: ${{ inputs.transport }}
@@ -117,3 +123,12 @@ jobs:
           ALIGNMENT: ${{ inputs.alignment }}
         run: |
           python -m tools.cloud_handshake --transport "$INPUT_TRANSPORT" --drive-id "$DRIVE_ID" --output-pub "$OUTPUT_PUB" --model "$MODEL_NAME" --language "$LANGUAGE" --chunk-seconds "$CHUNK_SECONDS" --alignment "$ALIGNMENT"
+      - name: Private Qwen3-ASR 1.7B CPU benchmark (encrypted text, no SRT)
+        if: ${{ inputs.model == 'qwen3-asr-1.7b' }}
+        env:
+          INPUT_TRANSPORT: ${{ inputs.transport }}
+          DRIVE_ID: ${{ inputs.encrypted_drive_file_id }}
+          OUTPUT_PUB: ${{ inputs.output_public_key }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          python -m tools.qwen_private_benchmark --model-size large --transport "$INPUT_TRANSPORT" --drive-id "$DRIVE_ID" --output-pub "$OUTPUT_PUB"
