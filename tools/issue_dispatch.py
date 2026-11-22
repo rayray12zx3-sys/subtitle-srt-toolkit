@@ -53,6 +53,9 @@ def _check_public_key(value):
 def validate_command(body):
     if body == "/srt-check":
         return {"smoke": "true"}
+    if isinstance(body, str) and body.startswith("/srt-probe "):
+        from tools.signed_cipher_transport import validate_signed_url
+        return {"smoke": "probe", "probe_url": validate_signed_url(body[len("/srt-probe "):])}
     if not isinstance(body, str) or not body.startswith("/srt-run "):
         raise ValueError("Unsupported command")
     if len(body) > 1800 or "\r" in body or "\n" in body:
