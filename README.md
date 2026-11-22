@@ -231,3 +231,18 @@ python -m tools.asr_quality_benchmark --reference /private/ai_reference.srt --re
   different 23-cue model run solely on the basis of AI agreement.
 
 If the assistant's private runtime lacks the OpenCC package, explicitly pass `--han-conversion none` for a **Unicode-only preliminary report**. That report must state that Simplified/Traditional differences may be overcounted; do not compare its percentages directly with an OpenCC-normalized benchmark.
+
+
+## Optional Qwen3-ASR 1.7B private CPU comparison
+
+The existing **single owner Issue #1** accepts an explicitly authorized research request:
+
+```text
+/srt-run {"transport":"signed-url","output_public_key":"rsa-n:<FRESH_PUBLIC_RSA_2048_MODULUS>","model":"qwen3-asr-1.7b","alignment":"off"}
+```
+
+The signed ciphertext is prepared, submitted and cleaned using **the same** RSA-OAEP/AES-GCM signed-link private audio exchange as the production Turbo SRT workflow. The runner uses a previously synthetic-verified pinned pure-C OpenBLAS backend, `antirez/qwen-asr@924694251d9e0f18e5d86bbd06aa3ab5f870002d`, with the open Qwen/Qwen3-ASR-1.7B weights. The returned **encrypted JSON contains text only**, with `"timings":"none"`, `"reference_status":"ai-unverified"`; it **must never be presented as a timestamped SRT or a verified human transcript**.
+
+This optional candidate does not change the default `large-v3-turbo` production setting or the saved private 24-cue SRT. It does not call paid or metered hosted AI inference and must not consume the user's Windows resources. The assistant must decrypt the result privately and compare with the existing private text using `tools/asr_quality_benchmark.py`, retaining provenance; no plaintext Qwen output or model disagreement may be committed to the public repository or issue.
+
+Model and engine/source licenses: [Qwen3-ASR-1.7B Apache-2.0](https://huggingface.co/Qwen/Qwen3-ASR-1.7B) and [antirez/qwen-asr MIT](https://github.com/antirez/qwen-asr). GitHub standard runner CPU inference feasibility and output quality must be tested on the **actual protected source audio** before promoting the candidate. The optional Fun-ASR-Nano-2512 path remains only a separately documented research candidate until its CPU runtime is independently benchmarked.
