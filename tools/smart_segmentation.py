@@ -69,7 +69,7 @@ def suspicious_english_glue(text: str) -> list[str]:
 def repair_english_glue(text: str) -> str:
     """Display-only spacing at a lowercase->Uppercase boundary.
 
-    Whisper often returns right+Well or cream+Wish without leading whitespace.
+    Whisper can return walk+Now without leading whitespace.
     Don't split subword fragments L+ala / W+ish (not camel-case), and preserve
     known CamelCase names. Never fabricate timestamp boundaries.
     """
