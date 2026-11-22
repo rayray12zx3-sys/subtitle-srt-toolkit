@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 from tools.asr_quality_benchmark import (
     compare, edit_distance, measure, normalize, read_private_text,
-    units, write_private_json,
+    units, write_private_json, validate_human_audit,
 )
 
 
@@ -120,6 +120,46 @@ class QualityBenchmarkTests(unittest.TestCase):
         result = compare("今天說話", "今天说话", reference_status="ai-unverified",
                          normalizer=OpenCC("s2t").convert)
         self.assertEqual(result["scores"]["han"]["difference_rate"], 0.0)
+
+    def test_human_audit_must_match_gold_sha_and_reviewed_cues(self):
+        import hashlib
+        with tempfile.TemporaryDirectory() as folder:
+            src = Path(folder) / "gold.txt"
+            src.write_text("Hello 世界\n", encoding="utf-8")
+            audit = {
+                "schema": "subtitle-srt-human-review-v1",
+                "status": "HUMAN_SELF_ATTESTED_TEXT_ONLY",
+                "cues": 2,
+                "text_reviewed": 2,
+                "time_reviewed": 0,
+                "reviewer_id": "Review pseudonym",
+                "review_completed_utc": "2026-11-22T12:00:00Z",
+                "gold_sha256": hashlib.sha256(src.read_bytes()).hexdigest(),
+            }
+            path = Path(folder) / "audit.json"
+            path.write_text(json.dumps(audit), encoding="utf-8")
+            verified = validate_human_audit(path, src)
+            self.assertEqual(verified["reviewed_cues"], 2)
+            self.assertIn("Self-attested", verified["note"])
+            audit["text_reviewed"] = 1
+            path.write_text(json.dumps(audit), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "not complete"):
+                validate_human_audit(path, src)
+            audit["text_reviewed"] = 2
+            audit["gold_sha256"] = "0" * 64
+            path.write_text(json.dumps(audit), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "SHA-256"):
+                validate_human_audit(path, src)
+
+    def test_ai_reference_cannot_be_upgraded_without_human_audit(self):
+        with tempfile.TemporaryDirectory() as folder:
+            src = Path(folder) / "ai.srt"
+            src.write_text("1\n00:00:00,100 --> 00:00:01,000\nHello\n",
+                           encoding="utf-8")
+            bogus = Path(folder) / "empty_audit.json"
+            bogus.write_text(json.dumps({"status": "DRAFT_AWAITING_HUMAN_LISTENING"}))
+            with self.assertRaisesRegex(ValueError, "provenance"):
+                validate_human_audit(bogus, src)
 
     def test_private_report_is_atomic_and_restricted(self):
         with tempfile.TemporaryDirectory() as temp:
