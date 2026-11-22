@@ -11,6 +11,15 @@ import math
 import re
 import unicodedata
 
+try:
+    import jieba
+except ImportError:  # Code-only optional callers keep deterministic fallback.
+    jieba = None
+
+# Common Traditional-Chinese school/educational terms not reliably present
+# in the default Simplified-oriented dictionary. This is not a transcript edit.
+PROTECTED_TERMS = ("形容詞", "心情")
+
 STRONG = "。！？!?;"
 CLAUSE = "，,；：;:"
 END_CONNECTOR = re.compile(
@@ -42,7 +51,63 @@ def visual_width(text: str) -> int:
 
 
 def _text(words) -> str:
-    return re.sub(r"\s+", " ", "".join(w.word for w in words)).strip()
+    pieces = []
+    for item in words:
+        chunk = item.word
+        # Whisper word timestamps sometimes omit the leading space even
+        # between separate English words; insert *display only* spacing.
+        if (pieces and chunk and chunk[0].isascii() and chunk[0].isalpha()
+                and not chunk[0].isspace()
+                and re.search(r"[A-Za-z.!?]$", pieces[-1])):
+            pieces.append(" ")
+        pieces.append(chunk)
+    result = re.sub(r"\s+", " ", "".join(pieces)).strip()
+    # Also handle glued English punctuation within ONE source word token.
+    return re.sub(r"(?<=[A-Za-z][.!?])(?=[A-Za-z])", " ", result)
+
+
+def _protected_boundaries(words):
+    """Indices where splitting would break a recognized Chinese lexical word.
+
+    Use only existing Whisper word-token boundaries and original timestamps.
+    Jieba's bundled local dictionary is offline and does not invent timing.
+    """
+    if len(words) < 2:
+        return set()
+    raw = "".join(w.word for w in words)
+    protected = set()
+    offsets = []
+    index = 0
+    for item in words[:-1]:
+        index += len(item.word)
+        offsets.append(index)
+    if jieba is not None:
+        # Build local lexicon once (jieba handles repeated add_word safely).
+        for term in PROTECTED_TERMS:
+            jieba.add_word(term)
+        tokens = [(start, end) for _token, start, end in jieba.tokenize(raw, HMM=True)
+                  if end - start > 1]
+    else:
+        tokens = []
+    # Supplement known Traditional forms even when the external tokenizer is
+    # unavailable; does not alter user text or invent Chinese per-character time.
+    for term in PROTECTED_TERMS:
+        start = 0
+        while True:
+            start = raw.find(term, start)
+            if start < 0:
+                break
+            tokens.append((start, start + len(term)))
+            start += len(term)
+    for i, offset in enumerate(offsets, 1):
+        left = words[i - 1].word.rstrip()
+        right = words[i].word.lstrip()
+        if not (left and right and "\u4e00" <= left[-1] <= "\u9fff"
+                and "\u4e00" <= right[0] <= "\u9fff"):
+            continue
+        if any(start < offset < end for start, end in tokens):
+            protected.add(i)
+    return protected
 
 
 def _ending(raw: str) -> str:
@@ -123,6 +188,7 @@ def _boundaries(words, max_chars: int, max_seconds: float,
         return []
     # Existing --max-chars is in approximate *Chinese-character* units.
     width_limit = min(2 * max_chars, 2 * line_chars * max_lines)
+    protected = _protected_boundaries(words)
     dp = [math.inf] * (n + 1)
     nxt = [-1] * (n + 1)
     dp[n] = 0.
@@ -145,6 +211,10 @@ def _boundaries(words, max_chars: int, max_seconds: float,
                 words[j - 1], words[j],
                 max(0., words[j].start - words[j - 1].end),
             )
+            # Respect dictionary-supported Chinese lexical continuity where
+            # another boundary is available, without fabricating word timings.
+            if j in protected:
+                end_cost += 15.0
             # Penalize very short captions, especially without punctuation.
             short = max(0., 1.0 - dur) * 2.8
             too_wide = max(0., size - width_limit) * 1.5
@@ -187,6 +257,7 @@ def break_lines(words, line_chars=12, max_lines=2):
     if visual_width(full) <= limit:
         return [full]
     choices = []
+    protected = _protected_boundaries(words)
     for i in range(1, len(words)):
         left = _text(words[:i])
         right = _text(words[i:])
@@ -198,7 +269,8 @@ def break_lines(words, line_chars=12, max_lines=2):
         boundary = _boundary_penalty(words[i - 1], words[i], pause)
         over = (max(0, left_width - limit) + max(0, right_width - limit))
         balance = abs(left_width - right_width) / max(1, limit)
-        choices.append((over * 10 + balance + boundary, over, left, right))
+        choices.append((over * 10 + balance + boundary +
+                        (15.0 if i in protected else 0.0), over, left, right))
     if not choices:
         return [full]  # do not invent intra-token timing
     score, overflow, left, right = min(choices, key=lambda x: x[0])

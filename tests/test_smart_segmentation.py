@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 
-from tools.smart_segmentation import segment_words, break_lines, visual_width
+from tools.smart_segmentation import segment_words, break_lines, visual_width, _protected_boundaries, _text
 from transcribe import write_srt
 
 
@@ -75,6 +75,27 @@ class SmartSemanticTests(unittest.TestCase):
         groups=segment_words(words,max_chars=8,max_duration=2.4,line_chars=8)
         self.assertTrue(all(len(g)>0 and g[0].start<g[-1].end for g in groups))
         self.assertEqual([x for group in groups for x in group],words)
+
+    def test_lexical_guard_prevents_split_in_traditional_compounds(self):
+        first = make(["你可以用其他的形", "容詞", "來形容", "心", "情不好"])
+        guards = _protected_boundaries(first)
+        self.assertIn(1, guards)  # 形|容詞
+        self.assertIn(4, guards)  # 心|情
+        self.assertEqual(_text(first), "你可以用其他的形容詞來形容心情不好")
+
+    def test_english_punctuation_glue_gets_display_space(self):
+        seq = make(["The worst part is, ", "she's right.Well", "maybe "])
+        self.assertIn("right. Well", _text(seq))
+        lines = break_lines(seq, line_chars=80, max_lines=2)
+        self.assertEqual(lines, ["The worst part is, she's right. Well maybe"])
+
+    def test_lexical_guard_applies_inside_two_line_layout(self):
+        words = make(["今天", "我們", "學", "形", "容詞", "有趣", "也很", "實用"])
+        result = break_lines(words, line_chars=7, max_lines=2)
+        self.assertEqual(len(result), 2)
+        self.assertFalse(result[0].endswith("形"))
+        self.assertFalse(result[0].endswith("心"))
+        self.assertIn("形容詞", "".join(result))
 
     def test_invalid_limits_rejected(self):
         with self.assertRaises(ValueError):
