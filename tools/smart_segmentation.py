@@ -94,6 +94,13 @@ def _protected_boundaries(words):
     for i, offset in enumerate(offsets, 1):
         left = words[i - 1].word.rstrip()
         right = words[i].word.lstrip()
+        # English clitics can be separate Whisper-timed pieces. Do not make
+        # a subtitle or line break between she|'s, we|'re, do|n't, etc.
+        if (left and right and re.search(r"[A-Za-z]$", left)
+                and re.match(r"^(?:['’](?:s|re|ve|ll|d|m|t)|n['’]t)\b",
+                             right, flags=re.IGNORECASE)):
+            protected.add(i)
+            continue
         if not (left and right and "\u4e00" <= left[-1] <= "\u9fff"
                 and "\u4e00" <= right[0] <= "\u9fff"):
             continue
