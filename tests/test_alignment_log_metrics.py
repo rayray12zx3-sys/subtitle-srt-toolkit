@@ -1,6 +1,6 @@
 """The real Runner printed attempted and succeeded on ONE line, so parse both."""
 import unittest
-from tools.cloud_handshake import parse_alignment_metrics
+from tools.alignment_log_metrics import parse_alignment_metrics
 
 class AlignmentLogMetricsTests(unittest.TestCase):
     def test_real_cli_compact_status_line_parses_all_fields(self):
