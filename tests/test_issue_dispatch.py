@@ -55,6 +55,39 @@ class IssueCommentDispatchTests(unittest.TestCase):
         self.assertEqual(result["alignment"], "qwen")
         self.assertEqual(result["chunk_seconds"], "0")
 
+    def test_probe_command_requires_expiring_signed_cipher_link(self):
+        from unittest.mock import patch
+        with patch("tools.signed_cipher_transport.validate_signed_url",
+                   return_value="https://approved.example.test/temporary"):
+            result = validate_event(event("/srt-probe https://example.test"))
+        self.assertEqual(result["smoke"], "probe")
+        self.assertEqual(result["probe_url"], "https://approved.example.test/temporary")
+        with self.assertRaises(ValueError):
+            validate_event(event("/srt-probe https://example.com/plaintext.wav"))
+
+    def test_signed_url_transport_needs_no_drive_id(self):
+        command = "/srt-run " + json.dumps({
+            "output_public_key": FAKE_RSA_N, "transport": "signed-url",
+            "model": "large-v3-turbo"})
+        result = validate_event(event(command))
+        self.assertEqual(result["transport"], "signed-url")
+        self.assertEqual(result["encrypted_drive_file_id"], "")
+        self.assertEqual(result["model"], "large-v3-turbo")
+
+    def test_signed_url_transport_rejects_drive_id(self):
+        with self.assertRaisesRegex(ValueError, "Signed URL transport"):
+            validate_command(run_request(transport="signed-url"))
+
+    def test_unknown_ciphertext_transport_fails_closed(self):
+        with self.assertRaisesRegex(ValueError, "Invalid ciphertext transport"):
+            validate_command(run_request(transport="anything"))
+
+    def test_no_public_url_or_plaintext_in_run_command(self):
+        with self.assertRaisesRegex(ValueError, "Missing or unknown"):
+            validate_command(run_request(signed_url="https://example.invalid/media"))
+        with self.assertRaisesRegex(ValueError, "Invalid encrypted"):
+            validate_command(run_request(encrypted_drive_file_id="http://example.org/a.wav"))
+
     def test_untrusted_commenter_rejected(self):
         with self.assertRaisesRegex(ValueError, "Unauthorized"):
             validate_event(event("/srt-check", commenter="anonymous"))

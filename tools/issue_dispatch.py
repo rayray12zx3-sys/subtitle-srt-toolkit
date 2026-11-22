@@ -20,9 +20,9 @@ MODELS = frozenset(("large-v3-turbo", "small", "tiny", "base", "medium",
                     "large-v3", "breeze-asr-25"))
 LANGUAGES = frozenset(("auto", "zh", "en"))
 ALIGNMENTS = frozenset(("off", "qwen"))
-ALLOWED = frozenset(("encrypted_drive_file_id", "output_public_key",
+ALLOWED = frozenset(("transport", "encrypted_drive_file_id", "output_public_key",
                      "model", "language", "alignment", "chunk_seconds"))
-REQUIRED = frozenset(("encrypted_drive_file_id", "output_public_key"))
+REQUIRED = frozenset(("output_public_key",))
 
 
 def _object_no_duplicate_keys(pairs):
@@ -53,6 +53,9 @@ def _check_public_key(value):
 def validate_command(body):
     if body == "/srt-check":
         return {"smoke": "true"}
+    if isinstance(body, str) and body.startswith("/srt-probe "):
+        from tools.signed_cipher_transport import validate_signed_url
+        return {"smoke": "probe", "probe_url": validate_signed_url(body[len("/srt-probe "):])}
     if not isinstance(body, str) or not body.startswith("/srt-run "):
         raise ValueError("Unsupported command")
     if len(body) > 1800 or "\r" in body or "\n" in body:
@@ -64,9 +67,17 @@ def validate_command(body):
         raise ValueError("Invalid JSON command") from exc
     if not isinstance(data, dict) or not REQUIRED <= data.keys() or data.keys() - ALLOWED:
         raise ValueError("Missing or unknown input fields")
-    drive_id = data["encrypted_drive_file_id"]
-    if not isinstance(drive_id, str) or not DRIVE_ID_RE.fullmatch(drive_id):
-        raise ValueError("Invalid encrypted-only Drive file ID")
+    transport = data.get("transport", "drive")
+    if transport not in ("drive", "signed-url"):
+        raise ValueError("Invalid ciphertext transport")
+    if transport == "drive":
+        drive_id = data.get("encrypted_drive_file_id")
+        if not isinstance(drive_id, str) or not DRIVE_ID_RE.fullmatch(drive_id):
+            raise ValueError("Invalid encrypted-only Drive file ID")
+    else:
+        if "encrypted_drive_file_id" in data:
+            raise ValueError("Signed URL transport must not include Drive ID")
+        drive_id = ""
     output_key = _check_public_key(data["output_public_key"])
     model = data.get("model", "large-v3-turbo")
     language = data.get("language", "auto")
@@ -78,6 +89,7 @@ def validate_command(body):
         raise ValueError("Invalid chunk seconds")
     return {
         "smoke": "false",
+        "transport": transport,
         "encrypted_drive_file_id": drive_id,
         "output_public_key": output_key,
         "model": model,

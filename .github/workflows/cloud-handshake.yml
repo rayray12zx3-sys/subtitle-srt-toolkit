@@ -2,9 +2,13 @@ name: Private audio to SRT - ephemeral GitHub CPU runner
 on:
   workflow_call:
     inputs:
-      encrypted_drive_file_id:
+      transport:
         type: string
         required: true
+        default: drive
+      encrypted_drive_file_id:
+        type: string
+        required: false
       output_public_key:
         type: string
         required: true
@@ -26,10 +30,18 @@ on:
         default: 600
   workflow_dispatch:
     inputs:
-      encrypted_drive_file_id:
-        description: 'ID of temporary public AES-GCM encrypted ciphertext (not audio)'
-        type: string
+      transport:
+        description: 'Ciphertext channel (drive legacy or short-lived signed link)'
+        type: choice
         required: true
+        default: drive
+        options:
+          - drive
+          - signed-url
+      encrypted_drive_file_id:
+        description: 'Only for legacy drive transport: encrypted-only Drive ID'
+        type: string
+        required: false
       output_public_key:
         description: 'Public RSA key for encrypted subtitle return (never private key)'
         type: string
@@ -71,6 +83,7 @@ on:
         required: true
 permissions:
   contents: read
+  issues: read
 jobs:
   transcribe:
     runs-on: ubuntu-latest
@@ -95,10 +108,12 @@ jobs:
       - name: Generate ephemeral keys, privately transcribe on GitHub and encrypt output
         env:
           DRIVE_ID: ${{ inputs.encrypted_drive_file_id }}
+          INPUT_TRANSPORT: ${{ inputs.transport }}
+          GITHUB_TOKEN: ${{ github.token }}
           OUTPUT_PUB: ${{ inputs.output_public_key }}
           MODEL_NAME: ${{ inputs.model }}
           LANGUAGE: ${{ inputs.language }}
           CHUNK_SECONDS: ${{ inputs.chunk_seconds }}
           ALIGNMENT: ${{ inputs.alignment }}
         run: |
-          python -m tools.cloud_handshake --drive-id "$DRIVE_ID" --output-pub "$OUTPUT_PUB" --model "$MODEL_NAME" --language "$LANGUAGE" --chunk-seconds "$CHUNK_SECONDS" --alignment "$ALIGNMENT"
+          python -m tools.cloud_handshake --transport "$INPUT_TRANSPORT" --drive-id "$DRIVE_ID" --output-pub "$OUTPUT_PUB" --model "$MODEL_NAME" --language "$LANGUAGE" --chunk-seconds "$CHUNK_SECONDS" --alignment "$ALIGNMENT"
