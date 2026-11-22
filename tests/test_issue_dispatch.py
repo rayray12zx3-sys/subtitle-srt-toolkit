@@ -55,6 +55,21 @@ class IssueCommentDispatchTests(unittest.TestCase):
         self.assertEqual(result["alignment"], "qwen")
         self.assertEqual(result["chunk_seconds"], "0")
 
+    def test_qwen_alignment_can_use_short_bilingual_experiment_chunks(self):
+        result=validate_command(run_request(model="large-v3-turbo",
+                                            alignment="qwen",chunk_seconds=12))
+        self.assertEqual(result["chunk_seconds"],"12")
+        for seconds in (2,8,11,1801):
+            with self.subTest(seconds=seconds),self.assertRaises(ValueError):
+                validate_command(run_request(alignment="qwen",
+                                             chunk_seconds=seconds))
+
+    def test_normal_asr_and_text_candidates_keep_previous_minimum(self):
+        for model in ("large-v3-turbo","qwen3-asr-1.7b","fun-asr-nano-2512"):
+            with self.subTest(model=model), self.assertRaises(ValueError):
+                validate_command(run_request(model=model,alignment="off",
+                                             chunk_seconds=12))
+
     def test_probe_command_requires_expiring_signed_cipher_link(self):
         from unittest.mock import patch
         with patch("tools.signed_cipher_transport.validate_signed_url",
