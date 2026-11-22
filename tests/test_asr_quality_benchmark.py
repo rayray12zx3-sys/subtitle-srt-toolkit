@@ -32,7 +32,7 @@ class QualityBenchmarkTests(unittest.TestCase):
     def test_english_word_level_not_character_error(self):
         report = compare("We love learning.", "We love!", reference_status="human-verified")
         self.assertEqual(report["scores"]["english"]["reference_units"], 3)
-        self.assertEqual(report["human_reference_rates"]["english_wer"], 1 / 3)
+        self.assertAlmostEqual(report["human_reference_rates"]["english_wer"], 1 / 3, places=6)
         self.assertIsNone(report["human_reference_rates"]["han_cer"])
 
     def test_chinese_character_level_not_space_word_split(self):
@@ -72,7 +72,7 @@ class QualityBenchmarkTests(unittest.TestCase):
     def test_explicit_human_status_only_uses_human_labels(self):
         result = compare("我 like it", "我 like this", reference_status="human-verified")
         self.assertEqual(result["status"], "HUMAN_REFERENCE_COMPARISON")
-        self.assertEqual(result["human_reference_rates"]["english_wer"], 0.333333)
+        self.assertEqual(result["human_reference_rates"]["english_wer"], 0.5)
         self.assertEqual(result["human_reference_rates"]["han_cer"], 0.0)
 
     def test_diff_items_bounded_without_changing_full_distance(self):
@@ -88,7 +88,7 @@ class QualityBenchmarkTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             compare("hello", "hi", reference_status="not-proven")
         with self.assertRaises(ValueError):
-            compare("a" * 9000, "hello", reference_status="ai-unverified")
+            compare("a " * 9000, "hello", reference_status="ai-unverified")
 
     def test_private_srt_and_text_inputs(self):
         with tempfile.TemporaryDirectory() as temp:
