@@ -77,7 +77,9 @@ def main():
             p.error('--drive-id is not allowed with signed-url transport')
         if not (os.environ.get('GITHUB_TOKEN') and os.environ.get('GITHUB_RUN_ID')):
             p.error('GitHub Actions token and run ID are required')
-        from tools.signed_cipher_transport import find_packet_urls, fetch_signed_ciphertext
+        from tools.signed_cipher_transport import (find_packet_urls,
+                                                      fetch_signed_ciphertext,
+                                                      publish_runner_public_key)
         run_id = int(os.environ['GITHUB_RUN_ID'])
         issue_token = os.environ['GITHUB_TOKEN']
     if a.output_pub.startswith('rsa-n:'):
@@ -90,7 +92,11 @@ def main():
         output_pub=serialization.load_der_public_key(base64.b64decode(a.output_pub,validate=True))
     in_priv=rsa.generate_private_key(public_exponent=65537,key_size=2048)
     pub=in_priv.public_key().public_bytes(serialization.Encoding.DER,serialization.PublicFormat.SubjectPublicKeyInfo)
-    print('SRT_INPUT_PUBLIC_KEY_B64='+base64.b64encode(pub).decode('ascii'),flush=True)
+    encoded_public_key = base64.b64encode(pub).decode('ascii')
+    print('SRT_INPUT_PUBLIC_KEY_B64='+encoded_public_key,flush=True)
+    if a.transport == 'signed-url':
+        publish_runner_public_key(run_id, encoded_public_key, issue_token)
+        print('SRT_PUBLIC_KEY_PUBLISHED_TO_CONTROL_ISSUE', flush=True)
     print('WAITING_FOR_ENCRYPTED_INPUT',flush=True)
     source_bytes=None
     began=time.monotonic()
