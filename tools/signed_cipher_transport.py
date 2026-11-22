@@ -116,3 +116,32 @@ def fetch_signed_ciphertext(url: str) -> bytes:
     if len(cipher) > MAX_PACKET_BYTES or not cipher.startswith(b"SRT2"):
         raise ValueError("Not a bounded SRT2 ciphertext packet")
     return cipher
+
+def publish_runner_public_key(run_id: int, encoded_public_key: str, token: str):
+    """Publish only ephemeral RSA PUBLIC key to the single owner control Issue.
+
+    This avoids paid browser access to live (in-progress) GitHub Actions logs.
+    The GitHub-provided short-lived GITHUB_TOKEN is scoped to issues:write;
+    never publish RSA private keys, plaintext or signed ciphertext links here.
+    """
+    if (type(run_id) is not int or run_id <= 0
+            or not isinstance(encoded_public_key, str)
+            or not re.fullmatch(r"[A-Za-z0-9+/=]{380,500}", encoded_public_key)
+            or not token):
+        raise ValueError("Invalid runner public-key announcement")
+    body = f"/srt-key {run_id} {encoded_public_key}"
+    url = f"https://api.github.com/repos/{REPO}/issues/{ISSUE}/comments"
+    req = Request(url, data=json.dumps({"body": body}).encode("utf-8"),
+                  headers={
+                      "Accept": "application/vnd.github+json",
+                      "Authorization": "Bearer " + token,
+                      "Content-Type": "application/json",
+                      "User-Agent": "subtitle-srt-toolkit-ephemeral-pubkey",
+                  }, method="POST")
+    with urlopen(req, timeout=25) as response:
+        if response.status != 201:
+            raise ValueError("Runner public-key announcement failed")
+        metadata = json.load(response)
+    if not isinstance(metadata, dict) or not metadata.get("id"):
+        raise ValueError("Missing GitHub public-key comment receipt")
+    return True

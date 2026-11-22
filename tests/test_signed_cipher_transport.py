@@ -1,10 +1,12 @@
 """Pure synthetic safety tests: signed ciphertext URLs and GitHub owner packets."""
 from datetime import datetime, timedelta, timezone
 import unittest
+from unittest.mock import patch
+import json
 from urllib.parse import quote
 
 from tools.signed_cipher_transport import (
-    validate_signed_url, matching_packet_urls,
+    validate_signed_url, matching_packet_urls, publish_runner_public_key,
 )
 
 NOW = datetime(2026, 11, 22, 8, 0, tzinfo=timezone.utc)
@@ -58,6 +60,32 @@ class SignedCipherTransportTests(unittest.TestCase):
             {"id": 14, "user": {"login": "rayray12zx3-sys"}, "body": f"/srt-packet {RUN} https://evil.com"},
         ]
         self.assertEqual(matching_packet_urls(comments, RUN, now=NOW), [url])
+
+    def test_public_key_announcement_post_is_public_only(self):
+        class Response:
+            status = 201
+            def __enter__(self): return self
+            def __exit__(self, *args): return False
+            def read(self, *args): return b'{"id":12345}'
+        captured = []
+        def fake_urlopen(req, timeout=0):
+            captured.append(req)
+            return Response()
+        with patch("tools.signed_cipher_transport.urlopen", side_effect=fake_urlopen):
+            self.assertTrue(publish_runner_public_key(RUN, "A"*392, "test-gh-actions-token"))
+        self.assertEqual(len(captured), 1)
+        request = captured[0]
+        self.assertEqual(request.get_method(), "POST")
+        self.assertTrue(request.full_url.endswith("/issues/1/comments"))
+        body = json.loads(request.data.decode("utf-8"))["body"]
+        self.assertEqual(body, f"/srt-key {RUN} " + "A"*392)
+        self.assertNotIn("private", body.lower())
+
+    def test_public_key_validation_rejects_secrets(self):
+        with self.assertRaises(ValueError):
+            publish_runner_public_key(RUN, "-----BEGIN PRIVATE KEY-----", "token")
+        with self.assertRaises(ValueError):
+            publish_runner_public_key(RUN, "A"*392, "")
 
     def test_newest_matching_packet_preferred(self):
         url = signed_url()

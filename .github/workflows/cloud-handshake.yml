@@ -83,7 +83,7 @@ on:
         required: true
 permissions:
   contents: read
-  issues: read
+  issues: write
 jobs:
   transcribe:
     runs-on: ubuntu-latest
