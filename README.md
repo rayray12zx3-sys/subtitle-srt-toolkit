@@ -14,17 +14,15 @@ This PUBLIC repository includes **tools and synthetic tests only**. It does not 
 - Do not publish WAV, SRT, transcription text, media hashes, plaintext audio URLs or private keys into the repository, GitHub Actions workflow inputs, issues, logs or artifacts.
 - Word-for-word correctness is **not** established by structural validation. Preserve fillers/original languages; verify against source audio before claiming manual proofreading.
 
-## Production cloud workflow
+## Production cloud workflow — verified signed ciphertext path (2026-11-22)
 
-**Workflow:** [Private audio to SRT - ephemeral GitHub CPU runner](.github/workflows/cloud-handshake.yml)
+**Default assisted ChatGPT route:** The connected GitHub account posts an owner-authorized `/srt-run` command to the **existing [control Issue #1](https://github.com/rayray12zx3-sys/subtitle-srt-toolkit/issues/1)** with a fresh RSA **public** return key and `transport:"signed-url"`. The GitHub-hosted standard Ubuntu CPU Runner announces its own ephemeral RSA **public** input key through the same Issue. ChatGPT encrypts the private source recording using RSA-OAEP/AES-256-GCM, places **ciphertext only** in private temporary staging, and posts a short-lived, read-only signed ciphertext URL for that exact run. The Runner authenticates and decrypts it transiently, executes the offline Whisper Large-v3 Turbo model with Smart2, validates the SRT structure, and returns **only encrypted** subtitles. ChatGPT authenticates/decrypts the result, verifies its time range against the private audio, delivers the SRT, and removes temporary ciphertext and private-key material.
 
-**Runner program:** [`tools/cloud_handshake.py`](tools/cloud_handshake.py)
+**Real private-audio proof:** [GitHub Actions run #45002968782](https://github.com/rayray12zx3-sys/subtitle-srt-toolkit/actions/runs/45002968782) **PASS**, 58.191-second source WAV → 24 SRT cues, 17 double-line cues, with no paid browser automation, hosted AI inference API or user Windows resources. A subsequent **display-only** contraction line-break correction was merged via [PR #7](https://github.com/rayray12zx3-sys/subtitle-srt-toolkit/pull/7) and applied to the privately delivered SRT without changing recognized nonblank text or timestamps. PR #7's exact post-merge engine was not separately rerun for that private recording; the GitHub code-only tests passed.
 
-The ephemeral runner creates an RSA keypair, prints **only the public key**, and waits for a temporary encrypted ciphertext file. The authorized caller encrypts the source audio with an AES-256-GCM session key wrapped in that public RSA key, updates the temporary encrypted-only input in a short-lived public-read blob, and supplies the file ID to `workflow_dispatch`. The workflow downloads **ciphertext only**, decrypts privately in the runner, normalizes audio, downloads static open-source Whisper weights, runs the model on CPU, validates the resulting SRT, and encrypts the output to the caller's separate public RSA key. The caller decrypts it and delivers the .srt attachment directly in chat, then deletes temporary ciphertext storage.
+**Components:** [owner comment dispatch](.github/workflows/issue-comment-dispatch.yml) → [reusable cloud inference](.github/workflows/cloud-handshake.yml) → [encrypted transport](tools/signed_cipher_transport.py) and [private CPU runner](tools/cloud_handshake.py). Manual `workflow_dispatch` with `transport:"drive"` remains as a legacy alternative, **not** the accepted default route; it may need separately managed anonymous read access to ciphertext only.
 
-Only public keys and encrypted payloads pass through public metadata. No GitHub secret, hosted AI inference API or local user computer is used.
-
-**Important:** This is a verified end-to-end capability, **not** yet a one-click user interface. The orchestrating ChatGPT session must carry out the temporary encrypted input/output exchange; the workflow cannot automatically retrieve a ChatGPT attachment without that orchestration. Never place a raw recording URL in the workflow's `encrypted_drive_file_id` field.
+**Boundaries:** This is a completed **assisted ChatGPT-connector flow**, not a separately deployed one-click service or a claim of unlimited GitHub compute. It requires live authorized GitHub/Drive connectors and an assistant-side private runtime. GitHub Actions CI/structural validation does not prove verbatim transcription accuracy, exact word alignment or human proofreading. Never publish a recording, plaintext transcript/SRT, private key or plaintext media URL to this public repository, Issue or logs.
 
 ## Reproducible cloud smoke test
 
@@ -57,13 +55,12 @@ Additional real private recording trials now include Breeze-ASR-25 (**33 cues**)
 
 The production default remains **Large-v3 Turbo**, Small fallback, Qwen3-ASR 0.6B optional private-text cross-check. Models are NOT ranked by genuine CER/WER: only cross-recognizer string similarity was measured, without human verified truth. FireRed had greater inference cost and no demonstrated accuracy advantage for this test. See [MODEL_EVALUATION.md](MODEL_EVALUATION.md) for aggregate evidence.
 
-## Next stage: reusable secure chat-to-GitHub client (2026-11-21)
+## Optional legacy secure-exchange helper (2026-11-21)
 
-The previous manual RSA/AES-GCM media handoff is now packaged as
+The original manual RSA/AES-GCM handoff remains packaged as
 [`tools/secure_exchange.py`](tools/secure_exchange.py), with offline synthetic
-integration tests. It is an **assistant cloud-session helper**, NOT a command
-to run on the user's Windows PC. All inference still runs on the GitHub-hosted
-CPU runner.
+integration tests. This is an **optional assistant-side legacy/debug helper**;
+the accepted current route uses owner Issue comments and short-expiry signed ciphertext links as described above. It is **not** a command to run on the user's Windows PC. All inference remains on the GitHub-hosted CPU runner.
 
 **Three assistant-side helpers:**
 
@@ -92,14 +89,13 @@ subtitle text into public logs. The caller must then **actually attach** the
 validated SRT in chat and delete both temporary ciphertext storage and
 ephemeral private key.
 
-**What remains manual/connector-dependent:** the authorized assistant must
-create/share the temporary encrypted Google Drive file, dispatch GitHub Actions,
-obtain the runner's public key, update the encrypted Drive file, and receive
-job logs using connected authenticated tools. Neither a connector's login,
-permission prompts, temporary file creation, workflow dispatch, nor chat
-attachment delivery can be guaranteed by Python code alone. This is **not
-a verified one-click flow**. Reusable helper + CI proves the crypto handoff,
-not future end-to-end autonomous delivery or word-for-word accuracy.
+**What remains connector-dependent:** the authenticated ChatGPT session still
+coordinates the private media, ephemeral keys, owner Issue command, staged
+ciphertext, encrypted Runner log result, local SRT validation and chat delivery.
+These steps **have succeeded end-to-end for the recorded 58.191-second audio**,
+but an independent unattended one-click app has **not** been deployed.
+A connector outage, expiry or permission change may block a later request;
+crypto unit tests alone never guarantee future delivery or word-for-word accuracy.
 
 The default model remains Large-v3 Turbo; no paid or quota-limited AI
 inference is used. Open-source dependencies and GitHub's normal usage
@@ -131,7 +127,7 @@ Returned files are named `clip_0001.srt` and `clip_0002.srt` in input order. A f
 
 [Encrypted two-source production Turbo model synthetic regression](https://github.com/rayray12zx3-sys/subtitle-srt-toolkit/actions/runs/44917772851) **PASS**, 19 validated SRT cues over 2 independent clips; [code-only CI](https://github.com/rayray12zx3-sys/subtitle-srt-toolkit/actions/runs/44917772932) **41/41 PASS**.
 
-Next true app integration gate: a **new private** 30m recording or multi-file upload must traverse authorized Google Drive temporary ciphertext, GitHub, SRT validation and actual chat attachment, without manual user relay. Until that happens, **automatic one-request delivery remains UNVERIFIED**.
+**Still unverified for longer/batch media:** a new private ~30-minute recording or multi-file request must pass the current signed-ciphertext GitHub flow, aggregate SRT validation and actual chat attachment. The **58.191-second single-audio assisted flow is already verified**; do not confuse that acceptance with private 30-minute or multi-file acceptance.
 
 ## Fully automatic semantic subtitle segmentation (2026-11-22)
 
@@ -176,24 +172,13 @@ word timestamps. No paid/limited API or manual proofreading required.
 This is an **optional experimental mode**, not proven more accurate merely
 because the model returns finer granularity.
 
-## GitHub-native, no-browser dispatch (owner-only)
+## Legacy encrypted-Drive dispatch (historical, not the default)
 
-The reusable [control Issue #1](https://github.com/rayray12zx3-sys/subtitle-srt-toolkit/issues/1) accepts comments **only from `rayray12zx3-sys`**, checked both in GitHub Actions job authorization and in `tools/issue_dispatch.py`. It reuses `.github/workflows/cloud-handshake.yml` and the same encrypted media protocol as manual `workflow_dispatch`; no new hosted model API or paid browser automation is needed to **trigger** a run.
-
-**No-model smoke trigger:** post exactly `/srt-check` on Issue #1 using the connected GitHub `add_comment_to_issue` action. The small workflow checks owner/origin and emits `SRT_COMMENT_DISPATCH_SMOKE_PASS`, without creating an RSA keypair, downloading model weights, or processing media.
-
-**Real inference trigger (PUBLIC metadata only):** The assistant must *first* prepare a short-lived public-readable **ciphertext-only** Drive rendezvous object and keep a fresh RSA return private key outside GitHub. Then, as the owner, add one issue comment containing one line of JSON:
-
-```text
-/srt-run {"encrypted_drive_file_id":"<TEMP_CIPHERTEXT_ONLY_DRIVE_ID>","output_public_key":"rsa-n:<COMPACT_2048_BIT_RSA_PUBLIC_MODULUS>","model":"large-v3-turbo","language":"auto","alignment":"off","chunk_seconds":600}
-```
-
-Only `encrypted_drive_file_id` and `output_public_key` are mandatory; the other fields default to those shown. Strict validation rejects unauthorized actor/repo/issue, malformed public keys, unexpected keys/URLs, multiline injection and invalid options. The controller reads the **runner's public** encryption key from its live logs, encrypts and updates the same temporary Drive object with Opus audio, receives encrypted SRT ciphertext from the logs, decrypts privately, validates against the original WAV and delivers the SRT in the chat, then removes temporary encrypted files and private keys.
-
-**Important limitations:** (1) This removes the need for paid **browser automation solely to dispatch GitHub Actions**; the connected Google Drive tooling still needs a proven free way to make only the ciphertext rendezvous publicly readable. If that sharing or cleanup requires paid automation, the *complete* flow is not yet quota-free. (2) Posting issue comments does **not** itself upload or decrypt private audio, and GitHub's successful runner job does **not** deliver an SRT to the user. (3) A public issue comment is permanent, so send public RSA keys and temporary encrypted file IDs ONLY; never paste raw recordings, transcripts, SRTs, raw recording URLs, passwords or RSA private keys. (4) Standard hosted runners on this public repo are subject to GitHub's policies and service limits even though they do not consume limited AI inference API quotas.
-
+An earlier owner-only GitHub Issue dispatch used `encrypted_drive_file_id` and a publicly readable ciphertext-only Drive file. It was validated for GitHub workflow triggering, but required separate anonymous read access to its encrypted rendezvous object. **Use the newer `transport:"signed-url"` path below** when a valid short-expiry ciphertext URL is available. The old `transport:"drive"` branch is kept for compatibility only. Both variants accept public RSA return metadata but must never receive plaintext media, credentials or private RSA keys.
 
 ## No paid-browser ciphertext transfer (ephemeral signed-link protocol)
+
+**Status: live real-source PASS, 2026-11-22.** [Run #45002968782](https://github.com/rayray12zx3-sys/subtitle-srt-toolkit/actions/runs/45002968782) verified an owner Issue command, an ephemeral public-key exchange, a signed ciphertext download, offline Whisper CPU inference, private encrypted SRT return, and chat delivery. This is not human-scored transcript correctness.
 
 The previous GitHub comment command removed paid browser usage for **triggering** Actions but still needed an anonymously readable Google Drive file. The new opt-in `transport:"signed-url"` mode removes that Drive sharing requirement too, while retaining `transport:"drive"` for legacy compatibility.
 
@@ -204,4 +189,4 @@ The previous GitHub comment command removed paid browser usage for **triggering*
 5. The runner GETs ciphertext from the short-lived signed link, authenticates/decrypts in its ephemeral memory, performs offline Whisper inference, validates, and logs only encrypted SRT output. The assistant decrypts/authenticates/validates the new SRT against original audio and attaches the actual file in the chat, then deletes the private staging file and private keys.
 6. **No-model network diagnostic:** only the owner may post `/srt-probe <SHORT_LIVED_SIGNED_CIPHERTEXT_URL>`; runner verifies that a signed `SRT2` ciphertext URL can actually be fetched. It never downloads a speech model or consumes paid inference. Do not pass raw media URLs or private recordings.
 
-**Trust boundary:** the signed URL is posted in a PUBLIC GitHub comment, so even though it references only authenticated ciphertext and automatically expires, it is briefly visible to anyone. Do not use if link publication of ciphertext (even temporarily) is forbidden by your privacy policy. Do not claim zero-cost full flow unless the live `/srt-probe` and real private `/srt-run` independently pass; the connector may issue signed links with different expiry or network reachability. No unattended product-level one-click claim follows merely from the code being merged. The private Drive staging file must be deleted; expired Issue URLs remain visible but no longer authorize download.
+**Trust boundary:** the signed URL is posted in a PUBLIC GitHub comment, so even though it references only authenticated ciphertext and automatically expires, it is briefly visible to anyone. Do not use if link publication of ciphertext (even temporarily) is forbidden by your privacy policy. Both a live `/srt-probe` and one real private `/srt-run` have passed; **future availability and platform quotas are still conditional** because connected tools can change URL expiry or network reachability. No unattended product-level one-click claim follows merely from the code being merged. The private Drive staging file must be deleted; expired Issue URLs remain visible but no longer authorize download.
