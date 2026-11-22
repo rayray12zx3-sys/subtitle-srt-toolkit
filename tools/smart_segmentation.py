@@ -51,9 +51,18 @@ def visual_width(text: str) -> int:
 
 
 def _text(words) -> str:
-    result = re.sub(r"\s+", " ", "".join(w.word for w in words)).strip()
-    # Whisper may emit a punctuation-joined Latin sentence boundary inside
-    # one token (e.g. right.Well). Add a DISPLAY space, without changing words.
+    pieces = []
+    for item in words:
+        chunk = item.word
+        # Whisper word timestamps sometimes omit the leading space even
+        # between separate English words; insert *display only* spacing.
+        if (pieces and chunk and chunk[0].isascii() and chunk[0].isalpha()
+                and not chunk[0].isspace()
+                and re.search(r"[A-Za-z.!?]$", pieces[-1])):
+            pieces.append(" ")
+        pieces.append(chunk)
+    result = re.sub(r"\s+", " ", "".join(pieces)).strip()
+    # Also handle glued English punctuation within ONE source word token.
     return re.sub(r"(?<=[A-Za-z][.!?])(?=[A-Za-z])", " ", result)
 
 
