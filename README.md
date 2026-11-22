@@ -175,3 +175,19 @@ gives impossible times, individual chunks automatically fall back to Whisper
 word timestamps. No paid/limited API or manual proofreading required.
 This is an **optional experimental mode**, not proven more accurate merely
 because the model returns finer granularity.
+
+## GitHub-native, no-browser dispatch (owner-only)
+
+The reusable [control Issue #1](https://github.com/rayray12zx3-sys/subtitle-srt-toolkit/issues/1) accepts comments **only from `rayray12zx3-sys`**, checked both in GitHub Actions job authorization and in `tools/issue_dispatch.py`. It reuses `.github/workflows/cloud-handshake.yml` and the same encrypted media protocol as manual `workflow_dispatch`; no new hosted model API or paid browser automation is needed to **trigger** a run.
+
+**No-model smoke trigger:** post exactly `/srt-check` on Issue #1 using the connected GitHub `add_comment_to_issue` action. The small workflow checks owner/origin and emits `SRT_COMMENT_DISPATCH_SMOKE_PASS`, without creating an RSA keypair, downloading model weights, or processing media.
+
+**Real inference trigger (PUBLIC metadata only):** The assistant must *first* prepare a short-lived public-readable **ciphertext-only** Drive rendezvous object and keep a fresh RSA return private key outside GitHub. Then, as the owner, add one issue comment containing one line of JSON:
+
+```text
+/srt-run {"encrypted_drive_file_id":"<TEMP_CIPHERTEXT_ONLY_DRIVE_ID>","output_public_key":"rsa-n:<COMPACT_2048_BIT_RSA_PUBLIC_MODULUS>","model":"large-v3-turbo","language":"auto","alignment":"off","chunk_seconds":600}
+```
+
+Only `encrypted_drive_file_id` and `output_public_key` are mandatory; the other fields default to those shown. Strict validation rejects unauthorized actor/repo/issue, malformed public keys, unexpected keys/URLs, multiline injection and invalid options. The controller reads the **runner's public** encryption key from its live logs, encrypts and updates the same temporary Drive object with Opus audio, receives encrypted SRT ciphertext from the logs, decrypts privately, validates against the original WAV and delivers the SRT in the chat, then removes temporary encrypted files and private keys.
+
+**Important limitations:** (1) This removes the need for paid **browser automation solely to dispatch GitHub Actions**; the connected Google Drive tooling still needs a proven free way to make only the ciphertext rendezvous publicly readable. If that sharing or cleanup requires paid automation, the *complete* flow is not yet quota-free. (2) Posting issue comments does **not** itself upload or decrypt private audio, and GitHub's successful runner job does **not** deliver an SRT to the user. (3) A public issue comment is permanent, so send public RSA keys and temporary encrypted file IDs ONLY; never paste raw recordings, transcripts, SRTs, raw recording URLs, passwords or RSA private keys. (4) Standard hosted runners on this public repo are subject to GitHub's policies and service limits even though they do not consume limited AI inference API quotas.
