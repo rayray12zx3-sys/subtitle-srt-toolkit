@@ -276,3 +276,20 @@ The browser generates a draft matching the `prepare` schema. The reviewer must l
 Only after human-confirmed reference provenance is established may [`tools/asr_quality_benchmark.py`](tools/asr_quality_benchmark.py) be used in `--reference-status human-verified` mode **with `--human-audit /private/human_gold_audit.json`**, which must match the reference SHA-256 and confirm every text cue, to compute Han-character CER and English-word WER for any candidate; the resulting rates remain conditional on the supplied reviewer declaration, which software cannot independently substantiate. **The project currently has no completed human-listened gold reference.** Existing AI-to-AI comparisons and Qwen/Whisper boundary disagreement remain diagnostics, not human quality truth.
 
 For cue timing comparison, `cue_time_disagreement(reference_srt, candidate_srt)` reports median/P95/max absolute movement **only when normalized cue text and segmentation match one-to-one**. Otherwise it returns `NOT_COMPARABLE_SEGMENTATION` or `NOT_COMPARABLE_TRANSCRIPT_OR_SEGMENTATION` instead of fabricating a timing error for 22-versus-24 cues. Cue-boundary comparisons are not word-level alignment scores.
+
+## Preferred user workflow: Premiere Pro-exported SRT (2026-11-23)
+
+**Premiere Pro is the default human editor; the HTML waveform workbench is optional legacy tooling, not a prerequisite.** Edit the AI-generated SRT against audio in Premiere, export it, and pass the SRT to the private assistant runtime. Splitting/merging cues (e.g. 24 AI cues to 31 editor cues) and correcting actual words are both valid.
+
+The offline `tools/premiere_reference.py` has two separate commands:
+
+```text
+python -m tools.premiere_reference check --audio /private/original.wav --source-srt /private/approved_ai.srt --edited-srt /private/premiere_corrected.srt
+
+# ONLY after the editor explicitly confirms listening to the recording and verifying ALL text and ALL cue boundaries:
+python -m tools.premiere_reference attest --audio /private/original.wav --source-srt /private/approved_ai.srt --edited-srt /private/premiere_corrected.srt --reviewer "Editor alias" --completed-utc "2026-11-23T03:00:00Z" --confirm-full-listening --audit-out /private/premiere_audit.json
+```
+
+`check` verifies source and edited SRT structure, ordered timestamps and source-audio duration, allowing different cue counts. It never claims human gold, even when the SRT was exported from Premiere. `attest` is a **distinct, explicitly human-authorized** action requiring an editor alias, UTC completion time and all-cue listening confirmation. Its private JSON audit is SHA-256-bound to the **existing corrected SRT** and is accepted by `asr_quality_benchmark.py --reference-status human-verified --human-audit ...`. Neither operation rewrites, duplicates or publicly exposes the private SRT.
+
+Structural validation or an editor-export filename does **not** imply actual human listening. Human self-attestation is not independently verified by software; SRT cue boundaries are not word-level timestamps. Never commit private audio, transcripts, hashes or reviewer identity to public GitHub, PR, Issue or CI logs. The original 24-cue AI SRT stays unchanged. The legacy HTML JSON flow remains available, but optional.
