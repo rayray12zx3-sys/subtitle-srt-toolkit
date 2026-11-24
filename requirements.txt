@@ -1,4 +1,5 @@
 faster-whisper>=1.1,<2
+av==18.1.1  # verified Linux binary wheel; bundled libav, no system FFmpeg
 opencc-python-reimplemented>=0.1.7,<1
 soundfile>=0.12,<1
 jieba==0.42.1  # bundled offline Chinese word dictionary; MIT
