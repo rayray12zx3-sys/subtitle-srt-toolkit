@@ -97,7 +97,8 @@ jobs:
           python-version: '3.11'
           cache: 'pip'
           cache-dependency-path: requirements.txt
-      - name: Verify FFmpeg (install only if unavailable)
+      - name: Verify FFmpeg (legacy candidate benchmarks only)
+        if: ${{ inputs.model == 'qwen3-asr-1.7b' || inputs.model == 'fun-asr-nano-2512' }}
         timeout-minutes: 4
         shell: bash
         run: |
@@ -118,7 +119,12 @@ jobs:
           echo 'FFMPEG_PREFLIGHT_PASS'
       - name: Install offline inference packages
         run: |
-          python -m pip install -r requirements.txt 'cryptography>=42,<48' huggingface_hub
+          python -m pip install --only-binary=av -r requirements.txt 'cryptography>=42,<48' huggingface_hub
+      - name: Verify bundled PyAV decoder (no system FFmpeg)
+        if: ${{ inputs.model != 'qwen3-asr-1.7b' && inputs.model != 'fun-asr-nano-2512' }}
+        timeout-minutes: 1
+        run: |
+          python -c 'import av; av.Codec("opus", "r"); av.AudioResampler(format="s16", layout="mono", rate=16000); print("PYAV_AUDIO_PREFLIGHT_PASS", av.__version__)'
       - name: Install CPU candidate C/C++ build dependencies
         if: ${{ inputs.model == 'qwen3-asr-1.7b' || inputs.model == 'fun-asr-nano-2512' }}
         run: |
