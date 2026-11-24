@@ -103,7 +103,6 @@ def _protected_boundaries(words):
         index += len(item.word)
         offsets.append(index)
     if jieba is not None:
-        # Build local lexicon once (jieba handles repeated add_word safely).
         for term in PROTECTED_TERMS:
             jieba.add_word(term)
         tokens = [(start, end) for _token, start, end in jieba.tokenize(raw, HMM=True)
@@ -120,7 +119,13 @@ def _protected_boundaries(words):
                 break
             tokens.append((start, start + len(term)))
             start += len(term)
+    spans = iter(sorted(tokens))
+    span = next(spans, None)
+    farthest_end = 0
     for i, offset in enumerate(offsets, 1):
+        while span is not None and span[0] < offset:
+            farthest_end = max(farthest_end, span[1])
+            span = next(spans, None)
         left = words[i - 1].word.rstrip()
         right = words[i].word.lstrip()
         # English clitics can be separate Whisper-timed pieces. Do not make
@@ -133,7 +138,7 @@ def _protected_boundaries(words):
         if not (left and right and "\u4e00" <= left[-1] <= "\u9fff"
                 and "\u4e00" <= right[0] <= "\u9fff"):
             continue
-        if any(start < offset < end for start, end in tokens):
+        if offset < farthest_end:
             protected.add(i)
     return protected
 
@@ -217,6 +222,11 @@ def _boundaries(words, max_chars: int, max_seconds: float,
     # Existing --max-chars is in approximate *Chinese-character* units.
     width_limit = min(2 * max_chars, 2 * line_chars * max_lines)
     protected = _protected_boundaries(words)
+    gaps = [0.] + [max(0., right.start - left.end) for left, right in zip(words, words[1:])]
+    boundary_costs = [0.] + [
+        _boundary_penalty(words[j - 1], words[j], gaps[j]) + (15.0 if j in protected else 0.)
+        for j in range(1, n)
+    ] + [0.]
     dp = [math.inf] * (n + 1)
     nxt = [-1] * (n + 1)
     dp[n] = 0.
@@ -231,18 +241,10 @@ def _boundaries(words, max_chars: int, max_seconds: float,
             # per-character timestamps. Allow it alone with a layout warning.
             if j > i + 1 and (size > width_limit or dur > max_seconds):
                 break
-            if j > i + 1 and (fragment[-1].start - fragment[-2].end > max_gap * 2.5):
+            if j > i + 1 and gaps[j - 1] > max_gap * 2.5:
                 break
             if j == i + 1 and not text:
                 continue
-            end_cost = 0. if j == n else _boundary_penalty(
-                words[j - 1], words[j],
-                max(0., words[j].start - words[j - 1].end),
-            )
-            # Respect dictionary-supported Chinese lexical continuity where
-            # another boundary is available, without fabricating word timings.
-            if j in protected:
-                end_cost += 15.0
             # Penalize very short captions, especially without punctuation.
             short = max(0., 1.0 - dur) * 2.8
             too_wide = max(0., size - width_limit) * 1.5
@@ -252,7 +254,7 @@ def _boundaries(words, max_chars: int, max_seconds: float,
             readability = _rate_penalty(text, dur)
             if j == n and dur < .8:
                 short *= .4  # do not force unnatural last-line splitting
-            cost = 2.2 + short + too_wide + overflow + tempo + readability + end_cost + dp[j]
+            cost = 2.2 + short + too_wide + overflow + tempo + readability + boundary_costs[j] + dp[j]
             if cost < dp[i]:
                 dp[i], nxt[i] = cost, j
     groups = []
@@ -328,7 +330,7 @@ def break_lines(words, line_chars=12, max_lines=2):
                         (15.0 if i in protected else 0.0), over, left, right))
     if not choices:
         return [full]  # do not invent intra-token timing
-    score, overflow, left, right = min(choices, key=lambda x: x[0])
+    _, overflow, left, right = min(choices, key=lambda x: (x[1] > 0, x[0]))
     if overflow and visual_width(full) <= limit:
         return [full]
     return repair_split_contraction_lines([left, right], line_chars=line_chars)

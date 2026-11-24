@@ -11,6 +11,7 @@ import math
 from pathlib import Path
 import sys
 import wave
+from collections.abc import Iterator
 
 
 class ChunkingError(ValueError):
@@ -49,6 +50,11 @@ def _quiet_cut(
 
 def split_pcm_wav(audio: Path, destination: Path, chunk_seconds: int,
                   search_seconds: float = 2.0) -> list[tuple[Path, float, float]]:
+    return list(iter_pcm_chunks(audio, destination, chunk_seconds, search_seconds))
+
+
+def iter_pcm_chunks(audio: Path, destination: Path, chunk_seconds: int,
+                    search_seconds: float = 2.0) -> Iterator[tuple[Path, float, float]]:
     if chunk_seconds < 2 or chunk_seconds > 3600:
         raise ChunkingError("Chunk length must be between 2 and 3600 seconds")
     destination.mkdir(parents=True, exist_ok=True)
@@ -58,10 +64,10 @@ def split_pcm_wav(audio: Path, destination: Path, chunk_seconds: int,
         rate = source.getframerate()
         total = source.getnframes()
         if channels != 1 or width != 2 or not rate or total == 0 or source.getcomptype() != "NONE":
-            raise ChunkingError("Chunking requires nonempty mono 16-bit PCM WAV; normalize with ffmpeg first")
+            raise ChunkingError("Chunking requires nonempty mono 16-bit PCM WAV")
         chunk_frames = chunk_seconds * rate
         start = 0
-        chunks = []
+        index = 0
         while start < total:
             desired = min(start + chunk_frames, total)
             end = desired if desired == total else _quiet_cut(
@@ -69,7 +75,7 @@ def split_pcm_wav(audio: Path, destination: Path, chunk_seconds: int,
             )
             if not start < end <= total:
                 raise ChunkingError("Invalid segmentation boundary")
-            path = destination / f"chunk_{len(chunks):04d}.wav"
+            path = destination / f"chunk_{index:04d}.wav"
             source.setpos(start)
             with wave.open(str(path), "wb") as target:
                 target.setnchannels(1)
@@ -83,6 +89,6 @@ def split_pcm_wav(audio: Path, destination: Path, chunk_seconds: int,
                         raise ChunkingError("Incomplete PCM source")
                     target.writeframesraw(raw)
                     frames_remaining -= n
-            chunks.append((path, start / rate, (end - start) / rate))
+            yield path, start / rate, (end - start) / rate
+            index += 1
             start = end
-        return chunks

@@ -20,10 +20,13 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq ffmpeg espeak-ng
           python -m pip install -r requirements.txt 'cryptography>=42,<48' huggingface_hub
-      - name: Generate two synthetic voice clips, each spanning multiple 5-second chunks
+      - name: Generate eight synthetic voice clips with different source lengths
         run: |
           espeak-ng -v en-us -s 140 -w /tmp/synthetic-a.wav 'Hello everyone. Today we will learn about language. This is a long transcript evaluation. We hope the recognition and the timing are correct. Hello again everyone.'
           espeak-ng -v en-us -s 135 -w /tmp/synthetic-b.wav 'Welcome to the second clip. This is a completely different audio recording. We need separate subtitles and time codes. The batch should be complete before returning the answer.'
+          for i in 3 4 5 6 7 8; do
+            espeak-ng -v en-us -s 135 -w "/tmp/synthetic-$i.wav" "This is clip $i. Keep each clip in the correct order. Restart subtitle timing for every separate recording."
+          done
       - name: Real GitHub CPU Whisper using production encrypted batch runner
         run: |
           python - <<'PY'
@@ -37,10 +40,11 @@ jobs:
                                              compact_public_key)
           from tools.batch_bundle import decode_bundle, is_batch_blob
           sources=[Path('/tmp/synthetic-a.wav'),Path('/tmp/synthetic-b.wav')]
+          sources.extend(Path(f'/tmp/synthetic-{i}.wav') for i in range(3,9))
           key_path=Path('/tmp/return-private.pem')
           return_public=make_return_key(key_path)
           runner_key=rsa.generate_private_key(public_exponent=65537,key_size=2048)
-          temp_packet=Path('/tmp/encrypted-two-clips.bin')
+          temp_packet=Path('/tmp/encrypted-batch.bin')
           prepare_batch_input(sources,runner_key.public_key(),temp_packet)
           ciphertext=temp_packet.read_bytes()
           assert not is_batch_blob(ciphertext)
@@ -51,16 +55,25 @@ jobs:
                 '--language','auto','--chunk-seconds','5']
           with patch.object(sys,'argv',args), patch.object(
               worker,'fetch_public_drive_blob',return_value=ciphertext), patch.object(
-              worker.rsa,'generate_private_key',return_value=runner_key), contextlib.redirect_stdout(log):
+              worker.rsa,'generate_private_key',return_value=runner_key), patch.object(
+              worker,'load_transcription_models',wraps=worker.load_transcription_models) as load, contextlib.redirect_stdout(log):
               worker.main()
+              assert load.call_count==1, load.call_count
           text=log.getvalue()
-          assert 'SRT_BATCH_ITEMS=2' in text
+          assert 'SRT_BATCH_ITEMS=8' in text
+          for prefix in ('SRT_MODEL_DOWNLOAD_SECONDS=', 'SRT_MODEL_LOAD_COUNT=', 'SRT_MODEL_LOAD_SECONDS=',
+                         'SRT_AUDIO_NORMALIZE_SECONDS=', 'SRT_ASR_GENERATION_SECONDS='):
+              print(next(line for line in text.splitlines() if line.startswith(prefix)))
           out=Path('/tmp/finished-srt-batch')
-          checks=finish_batch_srt(text,key_path,sources,out)
-          assert len(checks)==2
+          lesson=Path('/tmp/synthetic-lesson.txt')
+          lesson.write_text('Hello everyone. Today we will learn about language.', encoding='utf-8')
+          checks=finish_batch_srt(text,key_path,sources,out,lessons={1:lesson})
+          assert len(checks)==8
+          assert checks[0]['lesson_reference']['matched_english_words']>0
+          assert all('lesson_reference' not in item for item in checks[1:])
           assert all(x['cues']>=2 for x in checks)
           assert all(x['last_cue_seconds']>5 for x in checks)
-          assert len(list(out.glob('*.srt')))==2
+          assert len(list(out.glob('*.srt')))==8
           import re
           from tools.smart_segmentation import visual_width
           from delivery_gate import validate_delivery

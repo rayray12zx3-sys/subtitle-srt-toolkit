@@ -4,8 +4,6 @@ import argparse
 import base64
 import os
 import re
-import subprocess
-import sys
 import tempfile
 import time
 from pathlib import Path
@@ -14,12 +12,11 @@ from urllib.parse import urlsplit
 from cryptography.hazmat.primitives.asymmetric import rsa, padding
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-from huggingface_hub import snapshot_download
 from model_catalog import MODEL_REPOS, get_model_repo
 from tools.secure_exchange import emit_encrypted_srt
 from tools.batch_bundle import is_batch_blob,decode_bundle,encode_bundle
-from tools.alignment_log_metrics import parse_alignment_metrics
 from tools.runner_audio import normalize_opus_bytes
+from transcribe import load_transcription_models, parse_args, transcribe_audio
 
 
 MAGIC = b'SRT2'
@@ -63,6 +60,28 @@ def fetch_public_drive_blob(file_id):
             pass
     return None
 
+
+def wait_for_media(packet_fetchers, private, max_wait, *, poll_seconds=10):
+    deadline = time.monotonic() + max_wait
+    while time.monotonic() < deadline:
+        for fetch in packet_fetchers():
+            if time.monotonic() >= deadline:
+                break
+            try:
+                blob = fetch()
+                if blob:
+                    source = unpack(blob, private, INPUT_AAD)
+                    if source:
+                        return source
+            except Exception:
+                # A failed fetch or authentication must leave other candidates usable.
+                continue
+        remaining = deadline - time.monotonic()
+        if remaining > 0:
+            time.sleep(min(poll_seconds, remaining))
+    raise SystemExit('BLOCKED: Timed out waiting for compatible encrypted media')
+
+
 def main():
     p=argparse.ArgumentParser()
     p.add_argument('--drive-id', default='')
@@ -102,38 +121,31 @@ def main():
         publish_runner_public_key(run_id, encoded_public_key, issue_token)
         print('SRT_PUBLIC_KEY_PUBLISHED_TO_CONTROL_ISSUE', flush=True)
     print('WAITING_FOR_ENCRYPTED_INPUT',flush=True)
-    source_bytes=None
-    began=time.monotonic()
-    while time.monotonic()-began < a.max_wait:
-        if a.transport == 'signed-url':
+    if a.transport == 'signed-url':
+        from functools import partial
+
+        def packet_fetchers():
             try:
-                candidates = [fetch_signed_ciphertext(url)
-                              for url in find_packet_urls(run_id, issue_token)]
+                urls = find_packet_urls(run_id, issue_token)
             except Exception:
-                # Transient GitHub/short-lived link errors must not expose tokens.
-                candidates = []
-        else:
-            candidates = [fetch_public_drive_blob(a.drive_id)]
-        for blob in candidates:
-            if not blob:
-                continue
-            try:
-                source_bytes=unpack(blob,in_priv,INPUT_AAD)
-                break
-            except Exception:
-                # Authenticity failure: never use invalid packets.
-                continue
-        if source_bytes:
-            break
-        time.sleep(10)
-    if not source_bytes:
-        raise SystemExit('BLOCKED: Timed out waiting for compatible encrypted media')
+                return ()  # Transient GitHub errors must not expose tokens.
+            return (partial(fetch_signed_ciphertext, url) for url in urls)
+    else:
+        def packet_fetchers():
+            return (lambda: fetch_public_drive_blob(a.drive_id),)
+
+    source_bytes = wait_for_media(packet_fetchers, in_priv, a.max_wait)
     with tempfile.TemporaryDirectory(prefix='whisper_private_') as tmp:
         root=Path(tmp)
         model=root/'model'
         batch=is_batch_blob(source_bytes)
-        inputs=decode_bundle(source_bytes,"input") if batch else [("clip_0001",source_bytes)]
+        try:
+            inputs = decode_bundle(source_bytes, "input") if batch else [("clip_0001", source_bytes)]
+        except ValueError:
+            raise SystemExit('BLOCKED: Invalid authenticated input bundle') from None
         del source_bytes
+        from huggingface_hub import snapshot_download
+
         model_start = time.monotonic()
         if a.model == 'breeze-asr-25':
             snapshot_download(repo_id=get_model_repo(a.model),
@@ -149,44 +161,57 @@ def main():
             snapshot_download(repo_id='Qwen/Qwen3-ForcedAligner-0.6B-hf',
                               local_dir=str(aligner_dir))
         download_sec = time.monotonic() - model_start
+        # The hub is already imported for static model downloads. Require the
+        # bundled tokenizer to prevent Whisper's remote-tokenizer fallback.
+        if not (actual_model_dir / 'tokenizer.json').is_file():
+            raise SystemExit('BLOCKED: Downloaded model lacks a local tokenizer')
+        options = ['--model-dir', str(actual_model_dir), '--device', 'cpu',
+                   '--compute-type', 'int8', '--language', a.language,
+                   '--chunk-seconds', str(a.chunk_seconds), '--traditional']
+        if aligner_dir is not None:
+            options.extend(['--aligner-dir', str(aligner_dir)])
         asr_start = time.monotonic()
-        env={**os.environ,'HF_HUB_OFFLINE':'1','TRANSFORMERS_OFFLINE':'1','HF_HUB_DISABLE_TELEMETRY':'1'}
-        from delivery_gate import validate_delivery
-        from tools.subtitle_quality import analyze_srt
+        model_load_sec = 0.0
+        normalize_sec = 0.0
+        models = None
         completed=[]
         cues=0
         qa_fast=0
         qa_short=0
         qa_layout_warnings=0
         alignment_reports=[]
-        for clip_name,opus_bytes in inputs:
+        for clip_index, (clip_name, opus_bytes) in enumerate(inputs, 1):
             folder=root/clip_name
             folder.mkdir()
-            audio=folder/'audio.wav';srt=folder/'output.srt'
-            normalize_opus_bytes(opus_bytes, audio)
+            audio, srt = folder / 'audio.wav', folder / 'output.srt'
+            began = time.monotonic()
+            try:
+                normalize_opus_bytes(opus_bytes, audio)
+            except (OSError, ValueError):
+                raise SystemExit(f'BLOCKED: Audio normalization failed for clip {clip_index}') from None
+            normalize_sec += time.monotonic() - began
             print('SRT_AUDIO_NORMALIZER=pyav', flush=True)
-            command=[sys.executable,str(Path(__file__).resolve().parents[1]/'transcribe.py'),
-                     str(audio),'--model-dir',str(actual_model_dir),'--device','cpu',
-                     '--compute-type','int8','--language',a.language,
-                     '--chunk-seconds',str(a.chunk_seconds),
-                     '--traditional','--output',str(srt)]
-            if aligner_dir is not None:
-                command.extend(['--aligner-dir',str(aligner_dir)])
-            # Capture only aggregate counters. transcribe.py stdout includes a
-            # private temporary output path; never stream it into public logs.
-            outcome=subprocess.run(command,env=env,check=True,
-                                   stdout=subprocess.PIPE,text=True)
-            if aligner_dir is not None:
-                alignment_reports.append(parse_alignment_metrics(outcome.stdout))
-            report=validate_delivery(audio,srt)
-            if report['status']!='OUTPUT_VALIDATED_NOT_YET_DELIVERED':
-                raise SystemExit('BLOCKED: Invalid SRT in batch')
-            metrics=analyze_srt(srt)
+            args = parse_args([str(audio), '--output', str(srt), *options])
+            if models is None:
+                began = time.monotonic()
+                try:
+                    models = load_transcription_models(args)
+                except Exception:
+                    raise SystemExit('BLOCKED: Offline model initialization failed') from None
+                model_load_sec = time.monotonic() - began
+            try:
+                report, metrics, alignment, _ = transcribe_audio(args, *models)
+                completed.append((clip_name, srt.read_bytes()))
+                audio.unlink()
+                srt.unlink()
+            except Exception:
+                # Decoder and parser details may contain private recognized text.
+                raise SystemExit(f'BLOCKED: Transcription or SRT validation failed for clip {clip_index}') from None
+            alignment_reports.append(alignment)
             qa_fast+=metrics['reading_too_fast']
             qa_short+=metrics['too_brief']
             qa_layout_warnings+=int(not metrics['layout_ok'])
             cues+=report['cues']
-            completed.append((clip_name,srt.read_bytes()))
         asr_sec = time.monotonic() - asr_start
         payload=encode_bundle("output",completed) if batch else completed[0][1]
         emit_encrypted_srt(pack(payload,output_pub,OUTPUT_AAD))
@@ -197,6 +222,9 @@ def main():
         print('SRT_AUTO_QA_LAYOUT_WARNINGS='+str(qa_layout_warnings),flush=True)
         print('SRT_MODEL_ID='+a.model,flush=True)
         print('SRT_ALIGNMENT_MODE='+a.alignment,flush=True)
+        print('SRT_MODEL_LOAD_COUNT=1', flush=True)
+        print(f'SRT_MODEL_LOAD_SECONDS={model_load_sec:.2f}', flush=True)
+        print(f'SRT_AUDIO_NORMALIZE_SECONDS={normalize_sec:.2f}', flush=True)
         if a.alignment=='qwen':
             print('SRT_QWEN_ATTEMPTED_CHUNKS='+str(
                   int(sum(x["attempted"] for x in alignment_reports))),flush=True)

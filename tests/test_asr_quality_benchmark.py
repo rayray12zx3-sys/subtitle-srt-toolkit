@@ -174,9 +174,11 @@ class QualityBenchmarkTests(unittest.TestCase):
                 write_private_json(dest, {}, [dest])
 
     def test_refuse_public_repo_output_even_without_file(self):
-        with patch("tools.asr_quality_benchmark._REPO_ROOT", Path("/tmp/safe-public-repo")):
-            with self.assertRaisesRegex(ValueError, "public repository"):
-                write_private_json(Path("/tmp/safe-public-repo/private/report.json"), {}, [])
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp).resolve()
+            with patch("tools.asr_quality_benchmark._REPO_ROOT", root):
+                with self.assertRaisesRegex(ValueError, "public repository"):
+                    write_private_json(root / "private" / "report.json", {}, [])
 
 
 if __name__ == "__main__":

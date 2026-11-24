@@ -1,4 +1,4 @@
-name: 30-minute chunked SRT feasibility on GitHub CPU (synthetic speech)
+name: 60-minute chunked Turbo SRT on GitHub CPU (synthetic speech)
 on:
   workflow_dispatch:
   push:
@@ -9,7 +9,7 @@ permissions:
 jobs:
   long-synthetic-whisper:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 100
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -20,39 +20,43 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq ffmpeg espeak-ng
           python -m pip install -r requirements.txt huggingface_hub
-      - name: Create exactly 30 minutes of continuous synthetic speech
+      - name: Create exactly 60 minutes of continuous synthetic speech
         run: |
           espeak-ng -v en-us -s 175 -w /tmp/seed.wav 'Hello students. Today we will learn some interesting English words. Please listen carefully and practice with me. This class is a speech recognition timing test.'
-          ffmpeg -hide_banner -loglevel error -y -stream_loop -1 -i /tmp/seed.wav -t 1800 -ac 1 -ar 16000 -c:a pcm_s16le /tmp/continuous-thirty-minutes.wav
+          ffmpeg -hide_banner -loglevel error -y -stream_loop -1 -i /tmp/seed.wav -t 3600 -ac 1 -ar 16000 -c:a libopus -b:a 48k /tmp/synthetic-hour.opus
           python - <<'PY'
-          from delivery_gate import audio_duration
-          d=audio_duration(__import__('pathlib').Path('/tmp/continuous-thirty-minutes.wav'))
-          assert 1799.8<=d<=1800.2,d
-          print('SYNTHETIC_SOURCE_DURATION_SECONDS='+str(d))
+          from pathlib import Path
+          from tools.runner_audio import normalize_opus_bytes
+          source=Path('/tmp/synthetic-hour.opus')
+          assert source.stat().st_size < 64*1024*1024
+          samples=normalize_opus_bytes(source.read_bytes(), Path('/tmp/continuous-hour.wav'))
+          assert samples==3600*16000, samples
+          print('SYNTHETIC_SOURCE_DURATION_SECONDS='+str(samples/16000))
+          print('SYNTHETIC_OPUS_BYTES='+str(source.stat().st_size))
           PY
-      - name: Download a fixed open-source Whisper Tiny model (no inference API)
+      - name: Download open-source Whisper Large-v3 Turbo weights (no inference API)
         run: |
           python - <<'PY'
           from huggingface_hub import snapshot_download
-          snapshot_download(repo_id='Systran/faster-whisper-tiny',local_dir='/tmp/tiny-ct2')
+          from model_catalog import get_model_repo
+          snapshot_download(repo_id=get_model_repo('large-v3-turbo'),local_dir='/tmp/turbo-ct2')
           PY
-      - name: Process 30 minutes in non-overlapping 600-second segments
+      - name: Process 60 minutes in non-overlapping 600-second segments
         env:
           HF_HUB_OFFLINE: '1'
           TRANSFORMERS_OFFLINE: '1'
         run: |
           /usr/bin/time -f 'LONG_AUDIO_CPU_WALL_SEC=%e LONG_AUDIO_PEAK_RSS_KB=%M' \
-            python transcribe.py /tmp/continuous-thirty-minutes.wav \
-            --model-dir /tmp/tiny-ct2 --language auto --chunk-seconds 600 \
-            --device cpu --compute-type int8 --output /tmp/long-test-output.srt
-          python delivery_gate.py /tmp/continuous-thirty-minutes.wav /tmp/long-test-output.srt
+            python transcribe.py /tmp/continuous-hour.wav \
+            --model-dir /tmp/turbo-ct2 --language auto --chunk-seconds 600 \
+            --device cpu --compute-type int8 --traditional --output /tmp/long-test-output.srt
           python - <<'PY'
           from pathlib import Path
           from delivery_gate import validate_delivery
-          result=validate_delivery(Path('/tmp/continuous-thirty-minutes.wav'),Path('/tmp/long-test-output.srt'))
-          assert result['cues']>=100, result['cues']
-          assert result['last_cue_seconds']>=1750, result['last_cue_seconds']
-          print('THIRTY_MINUTE_SYNTHETIC_SPEECH_WHISPER_CPU_PASS')
-          print('THIRTY_MINUTE_SRT_CUES='+str(result['cues']))
-          print('THIRTY_MINUTE_LAST_END='+str(result['last_cue_seconds']))
+          result=validate_delivery(Path('/tmp/continuous-hour.wav'),Path('/tmp/long-test-output.srt'))
+          assert result['cues']>=200, result['cues']
+          assert result['last_cue_seconds']>=3550, result['last_cue_seconds']
+          print('SIXTY_MINUTE_SYNTHETIC_SPEECH_TURBO_CPU_PASS')
+          print('SIXTY_MINUTE_SRT_CUES='+str(result['cues']))
+          print('SIXTY_MINUTE_LAST_END='+str(result['last_cue_seconds']))
           PY

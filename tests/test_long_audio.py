@@ -62,6 +62,8 @@ class LongAudioTests(unittest.TestCase):
         class FakeWhisper:
             def __init__(self,*args,**kwargs): pass
             def transcribe(self,path,**kw):
+                if len(list(Path(path).parent.glob("*.wav"))) != 1:
+                    raise AssertionError("A production transcriber should stage one PCM chunk at a time")
                 with wave.open(path,"rb") as f:
                     dur=f.getnframes()/f.getframerate()
                 calls.append((path,dur,kw["language"]))

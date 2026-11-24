@@ -13,7 +13,7 @@ from datetime import datetime, timedelta, timezone
 import json
 import os
 import re
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, urlencode, urlsplit
 from urllib.request import Request, urlopen
 
 REPO = "rayray12zx3-sys/subtitle-srt-toolkit"
@@ -78,12 +78,13 @@ def matching_packet_urls(comments, run_id: int, now=None):
 def _github_issue_comments(token: str):
     if not token:
         raise RuntimeError("GitHub Actions read-only issue token unavailable")
-    # Issue is bounded and reused. Read only the newest 10 pages; inputs are
-    # server-authenticated GitHub issue comments, never client-supplied log text.
+    # This endpoint orders comments oldest first. Limit the search to recent
+    # activity so a long-lived Issue cannot hide valid short-lived packets.
+    since = (datetime.now(timezone.utc) - timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
     found = []
     for page in range(1, 11):
-        path = (f"https://api.github.com/repos/{REPO}/issues/{ISSUE}/comments"
-                f"?per_page=100&page={page}")
+        query = urlencode({"per_page": 100, "page": page, "since": since})
+        path = f"https://api.github.com/repos/{REPO}/issues/{ISSUE}/comments?{query}"
         req = Request(path, headers={
             "Accept": "application/vnd.github+json",
             "Authorization": "Bearer " + token,
