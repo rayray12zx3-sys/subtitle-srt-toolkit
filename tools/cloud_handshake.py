@@ -19,6 +19,7 @@ from model_catalog import MODEL_REPOS, get_model_repo
 from tools.secure_exchange import emit_encrypted_srt
 from tools.batch_bundle import is_batch_blob,decode_bundle,encode_bundle
 from tools.alignment_log_metrics import parse_alignment_metrics
+from tools.runner_audio import normalize_opus_bytes
 
 
 MAGIC = b'SRT2'
@@ -161,12 +162,9 @@ def main():
         for clip_name,opus_bytes in inputs:
             folder=root/clip_name
             folder.mkdir()
-            source=folder/'source.opus';audio=folder/'audio.wav';srt=folder/'output.srt'
-            source.write_bytes(opus_bytes)
-            subprocess.run(['ffmpeg','-hide_banner','-loglevel','error','-nostdin','-y',
-                            '-i',str(source),'-ar','16000','-ac','1','-c:a','pcm_s16le',
-                            str(audio)],check=True,stdout=subprocess.DEVNULL)
-            source.unlink(missing_ok=True)
+            audio=folder/'audio.wav';srt=folder/'output.srt'
+            normalize_opus_bytes(opus_bytes, audio)
+            print('SRT_AUDIO_NORMALIZER=pyav', flush=True)
             command=[sys.executable,str(Path(__file__).resolve().parents[1]/'transcribe.py'),
                      str(audio),'--model-dir',str(actual_model_dir),'--device','cpu',
                      '--compute-type','int8','--language',a.language,
