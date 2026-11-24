@@ -177,13 +177,18 @@ def output_envelope_from_logs(log: str) -> bytes:
     return _base64_decode(legacy[0])
 
 
-def finish_srt(log: str, private_key: Path, original_audio: Path, output: Path) -> dict:
+def finish_srt(log: str, private_key: Path, original_audio: Path, output: Path,
+               *, lesson: Path | None = None) -> dict:
     key = serialization.load_pem_private_key(private_key.read_bytes(), password=None)
     if not isinstance(key, rsa.RSAPrivateKey) or key.key_size != 2048:
         raise ValueError("Invalid return private key")
     plain = open_envelope(output_envelope_from_logs(log), key, OUTPUT_AAD)
     if not output.name.lower().endswith(".srt"):
         raise ValueError("Output must be an SRT file")
+    if output.resolve() == original_audio.resolve() or (
+        lesson is not None and output.resolve() == lesson.resolve()
+    ):
+        raise ValueError("The SRT output must be separate from both input files")
     output.parent.mkdir(parents=True, exist_ok=True)
     # Keep a pre-existing SRT unchanged until the *new* result passes validation.
     with tempfile.NamedTemporaryFile(dir=output.parent, suffix=".srt",
@@ -191,18 +196,31 @@ def finish_srt(log: str, private_key: Path, original_audio: Path, output: Path) 
         temporary = Path(pending.name)
         pending.write(plain)
     try:
-        report = validate_delivery(original_audio, temporary)
+        report = _validate_with_lesson(original_audio, temporary, lesson)
         os.replace(temporary, output)
+        report["output"] = str(output.resolve())
     finally:
         temporary.unlink(missing_ok=True)
     return report
 
 
+def _validate_with_lesson(audio: Path, srt: Path, lesson: Path | None) -> dict:
+    report = validate_delivery(audio, srt)
+    if lesson is not None:
+        from tools.lesson_reference import apply_lesson_reference, read_lesson
+
+        revised, stats = apply_lesson_reference(srt.read_bytes(), read_lesson(lesson))
+        if stats["case_changes"]:
+            srt.write_bytes(revised)
+            report = validate_delivery(audio, srt)
+        report["lesson_reference"] = stats
+    return report
 
 def prepare_batch_input(audios: list[Path], public: rsa.RSAPublicKey,
                         output: Path, ffmpeg: str = "ffmpeg") -> int:
     if not 1<=len(audios)<=MAX_CLIPS: raise ValueError("Expected 1..8 audio files")
     items=[]
+    total = 0
     with tempfile.TemporaryDirectory(prefix="private_batch_") as d:
         for i,audio in enumerate(audios,1):
             if not audio.is_file() or not audio.stat().st_size:
@@ -212,7 +230,10 @@ def prepare_batch_input(audios: list[Path], public: rsa.RSAPublicKey,
                             "-i",str(audio),"-vn","-ac","1","-ar","16000",
                             "-c:a","libopus","-b:a","48k",str(opus)],
                            check=True,timeout=180,capture_output=True)
-            items.append((clip_id(i),opus.read_bytes()))
+            total += opus.stat().st_size
+            if total > MAX_INPUT_BYTES:
+                raise ValueError("Compressed batch exceeds encrypted input limit")
+            items.append((clip_id(i), opus.read_bytes()))
         ciphertext=make_envelope(encode_bundle("input",items),public,INPUT_AAD)
     output.parent.mkdir(parents=True,exist_ok=True)
     with output.open("xb") as f:f.write(ciphertext)
@@ -220,11 +241,14 @@ def prepare_batch_input(audios: list[Path], public: rsa.RSAPublicKey,
 
 
 def finish_batch_srt(log: str, private_key: Path, audios: list[Path],
-                     output_dir: Path) -> list[dict]:
+                     output_dir: Path, *, lessons: dict[int, Path] | None = None) -> list[dict]:
     """Fail closed: nothing is exposed until *all* SRT/audio pairs pass."""
     import shutil
     if output_dir.exists() or not 1<=len(audios)<=MAX_CLIPS:
         raise ValueError("New output directory and 1..8 originals required")
+    lessons = lessons or {}
+    if any(type(index) is not int or not 1 <= index <= len(audios) for index in lessons):
+        raise ValueError("Lesson indexes must match 1-based audio positions")
     private=serialization.load_pem_private_key(private_key.read_bytes(),password=None)
     if not isinstance(private,rsa.RSAPrivateKey) or private.key_size!=2048:
         raise ValueError("Invalid private return key")
@@ -239,7 +263,9 @@ def finish_batch_srt(log: str, private_key: Path, audios: list[Path],
             if name!=clip_id(i): raise ValueError("Wrong clip ordering")
             path=staging/f"{name}.srt"
             path.write_bytes(raw)
-            reports.append(validate_delivery(audio,path))
+            report = _validate_with_lesson(audio, path, lessons.get(i))
+            report["output"] = str((output_dir / path.name).resolve())
+            reports.append(report)
         if output_dir.exists(): raise FileExistsError("Output directory exists")
         os.rename(staging,output_dir)
         return reports
@@ -265,11 +291,14 @@ def main() -> None:
     final_batch.add_argument("--job-log", type=Path, required=True)
     final_batch.add_argument("--audio", action="append", type=Path, required=True)
     final_batch.add_argument("--output-dir", type=Path, required=True)
+    final_batch.add_argument("--lesson", action="append", nargs=2, default=[],
+                             metavar=("CLIP_INDEX", "UTF8_TXT"))
     decrypt = commands.add_parser("finish")
     decrypt.add_argument("--private-key", required=True, type=Path)
     decrypt.add_argument("--job-log", required=True, type=Path)
     decrypt.add_argument("--original-audio", required=True, type=Path)
     decrypt.add_argument("--output", required=True, type=Path)
+    decrypt.add_argument("--lesson", type=Path, metavar="UTF8_TXT")
     args = parser.parse_args()
 
     if args.action == "new-return-key":
@@ -286,13 +315,19 @@ def main() -> None:
         print("ENCRYPTED_BATCH_INPUT_READY: items=" + str(len(args.audio)) +
               ", ciphertext_bytes=" + str(size))
     elif args.action == "finish-batch":
+        lessons = {}
+        for raw_index, path in args.lesson:
+            index = int(raw_index)
+            if index in lessons:
+                final_batch.error("Only one lesson reference is allowed per clip")
+            lessons[index] = Path(path)
         reports = finish_batch_srt(args.job_log.read_text("utf-8"), args.private_key,
-                                   args.audio, args.output_dir)
+                                   args.audio, args.output_dir, lessons=lessons)
         print("BATCH_VALIDATED_NOT_YET_DELIVERED: items=" + str(len(reports)) +
               ", cues=" + str(sum(x["cues"] for x in reports)))
     else:
         report = finish_srt(args.job_log.read_text("utf-8"),
-                            args.private_key, args.original_audio, args.output)
+                            args.private_key, args.original_audio, args.output, lesson=args.lesson)
         print("SRT_VALIDATED_NOT_YET_DELIVERED: cues=" + str(report["cues"]))
         print("The caller must actually attach the resulting .srt in chat.")
 

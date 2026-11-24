@@ -1,5 +1,11 @@
 # HANDOFF — subtitle-srt-toolkit
 
+## Current Issue #1 handoff — 2026-11-24
+
+- Baseline `9492e2e`: [PR #23](https://github.com/rayray12zx3-sys/subtitle-srt-toolkit/pull/23) moved production audio decoding to PyAV. [Run 45335132664](https://github.com/rayray12zx3-sys/subtitle-srt-toolkit/actions/runs/45335132664) verified a real private recording and 18-cue delivery in an ordinary-chat continuation. The earlier fresh ordinary chat reached dispatch and failed during runner preparation.
+- Continuation scope: independent signed-link retries, recent Issue comment lookup, temporary chunk streaming, one offline model load per batch, size checks, atomic SRT publication and subtitle layout regressions. Optional lesson comparison stays in the private assistant workspace after authenticated ASR. Only case corroborated by the lesson can change. Textual matches cannot establish new speech or timing.
+- Verification is tracked under [Issue #1](https://github.com/rayray12zx3-sys/subtitle-srt-toolkit/issues/1) and the corresponding PR. Code checks, 8-clip encrypted synthetic Turbo and a 60-minute synthetic Turbo run each have their own evidence. Fresh ordinary-chat acceptance requires independent audio-only and audio-plus-lesson runs with minimal prompts, no explicit plugin invocation, exact owner-Issue run, validated SRT attachment and verified cleanup.
+
 ## Canonical requirements (confirmed 2026-11-20)
 
 - Execution target: **GitHub-hosted standard Ubuntu GitHub Actions runner** ONLY. No user Windows/local machine or self-hosted runner without new explicit approval.

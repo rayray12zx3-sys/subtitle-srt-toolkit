@@ -32,6 +32,13 @@ class BatchTests(unittest.TestCase):
             with self.assertRaises(ValueError):encode_bundle("input",x)
         with self.assertRaises(ValueError):decode_bundle(MAGIC+b"broken","input")
 
+    def test_non_object_manifest_is_rejected(self):
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w") as bundle:
+            bundle.writestr("manifest.json", "[]")
+        with self.assertRaisesRegex(ValueError, "manifest"):
+            decode_bundle(MAGIC + buffer.getvalue(), "input")
+
     def test_full_eight_clip_envelope_roundtrip(self):
         data=[(clip_id(i),b"synthetic-opus" + bytes([i])) for i in range(1,9)]
         self.assertEqual(decode_bundle(encode_bundle("input",data),"input"),data)
@@ -73,5 +80,25 @@ class BatchTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             finish_batch_srt(self._cipherlog(key,x),key,audios,target)
         self.assertFalse(target.exists())
+
+    def test_per_clip_lessons_and_invalid_reference_keep_batch_atomic(self):
+        audios = [self._wav(1), self._wav(2)]
+        key = self.root / "return.pem"
+        make_return_key(key)
+        cue = b"1\n00:00:00,100 --> 00:00:00,800\nexample api\n"
+        log = self._cipherlog(key, [(clip_id(1), cue), (clip_id(2), cue)])
+        lesson = self.root / "lesson.txt"
+        lesson.write_bytes(b"example API\n")
+        target = self.root / "revised"
+        reports = finish_batch_srt(log, key, audios, target, lessons={2: lesson})
+        self.assertNotIn("lesson_reference", reports[0])
+        self.assertEqual(reports[1]["lesson_reference"]["case_changes"], 1)
+        self.assertIn(b"example api", (target / "clip_0001.srt").read_bytes())
+        self.assertIn(b"example API", (target / "clip_0002.srt").read_bytes())
+        lesson.write_bytes(b"\xff")
+        invalid_target = self.root / "not-published"
+        with self.assertRaisesRegex(ValueError, "UTF-8"):
+            finish_batch_srt(log, key, audios, invalid_target, lessons={2: lesson})
+        self.assertFalse(invalid_target.exists())
 
 if __name__=="__main__":unittest.main()

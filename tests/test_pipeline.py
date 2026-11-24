@@ -58,6 +58,14 @@ class PipelineTests(unittest.TestCase):
             self.run_pipeline([])
         self.assertFalse(self.output.exists())
 
+    def test_quality_failure_preserves_existing_srt_and_cleans_staging(self):
+        self.output.write_text("old result", encoding="utf-8")
+        with patch("tools.subtitle_quality.analyze_srt", side_effect=ValueError("test failure")):
+            with self.assertRaisesRegex(SystemExit, "BLOCKED"):
+                self.run_pipeline([SimpleNamespace(word="test", start=.1, end=.8)])
+        self.assertEqual(self.output.read_text("utf-8"), "old result")
+        self.assertEqual(list(self.output.parent.glob(".srt-pending-*.srt")), [])
+
     def test_missing_model_blocks_even_if_old_srt_exists(self):
         self.output.write_text("old result", encoding="utf-8")
         (self.model_dir / "model.bin").unlink()

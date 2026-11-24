@@ -3,10 +3,10 @@ from datetime import datetime, timedelta, timezone
 import unittest
 from unittest.mock import patch
 import json
-from urllib.parse import quote
+from urllib.parse import parse_qs, quote, urlsplit
 
 from tools.signed_cipher_transport import (
-    validate_signed_url, matching_packet_urls, publish_runner_public_key,
+    validate_signed_url, matching_packet_urls, publish_runner_public_key, _github_issue_comments,
 )
 
 NOW = datetime(2026, 11, 22, 8, 0, tzinfo=timezone.utc)
@@ -95,6 +95,19 @@ class SignedCipherTransportTests(unittest.TestCase):
             {"id": 101, "user": {"login": "rayray12zx3-sys"}, "body": f"/srt-packet {RUN} {newer}"},
         ]
         self.assertEqual(matching_packet_urls(comments, RUN, now=NOW), [newer, url])
+
+    def test_polling_filters_by_recent_updates_before_paging(self):
+        class Response:
+            def __enter__(self): return self
+            def __exit__(self, *args): return False
+            def read(self, *args): return b'[]'
+
+        with patch("tools.signed_cipher_transport.urlopen", return_value=Response()) as fetch:
+            self.assertEqual(_github_issue_comments("synthetic"), [])
+        query = parse_qs(urlsplit(fetch.call_args.args[0].full_url).query)
+        self.assertEqual(query["page"], ["1"])
+        since = datetime.fromisoformat(query["since"][0])
+        self.assertAlmostEqual((datetime.now(timezone.utc) - since).total_seconds(), 3600, delta=5)
 
 
 if __name__ == "__main__":

@@ -8,6 +8,7 @@ import os
 import re
 import statistics
 import tempfile
+from contextlib import closing
 from pathlib import Path
 from types import SimpleNamespace
 from delivery_gate import DeliveryBlocked, validate_delivery
@@ -84,7 +85,8 @@ def write_srt(groups, output: Path, minimal_punctuation: bool, converter=None,
         if line_chars:
             from tools.smart_segmentation import break_lines
             lines = break_lines(group, line_chars, max_lines)
-            content = "\n".join(clean_text(line, minimal_punctuation) for line in lines)
+            cleaned = (clean_text(line, minimal_punctuation) for line in lines)
+            content = "\n".join(line for line in cleaned if line)
         else:
             content = clean_text("".join(x.word for x in group), minimal_punctuation)
         if converter is not None:
@@ -101,7 +103,7 @@ def write_srt(groups, output: Path, minimal_punctuation: bool, converter=None,
     return len(parts)
 
 
-def main():
+def parse_args(argv=None):
     parser = argparse.ArgumentParser(
         description="Fully offline audio -> SRT using a pre-downloaded local Whisper model"
     )
@@ -132,14 +134,8 @@ def main():
     parser.add_argument("--max-seconds", type=float, default=4.0)
     parser.add_argument("--max-gap", type=float, default=0.45)
     parser.add_argument("--keep-punctuation", action="store_true")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
-    if not args.audio.is_file():
-        raise SystemExit(f"BLOCKED: Audio file not found: {args.audio}")
-    try:
-        model_dir = require_local_model(args.model_dir)
-    except ValueError as exc:
-        raise SystemExit(f"BLOCKED: {exc}") from exc
     if args.chunk_seconds < 0 or args.chunk_seconds == 1 or args.chunk_seconds > 3600:
         raise SystemExit("BLOCKED: --chunk-seconds must be 0 or between 2 and 3600")
     if args.reading_rate <= 0:
@@ -148,12 +144,16 @@ def main():
         raise SystemExit("BLOCKED: --line-chars must be positive")
     if args.max_chars < 1 or args.max_seconds <= 0 or args.max_gap < 0:
         raise SystemExit("BLOCKED: Invalid subtitle size/timing limits")
+    return args
 
+
+def load_transcription_models(args):
+    model_dir = require_local_model(args.model_dir)
     enable_offline_mode()
     try:
         from faster_whisper import WhisperModel
     except ImportError as exc:
-        raise SystemExit("BLOCKED: Local faster-whisper package is not installed") from exc
+        raise ValueError("Local faster-whisper package is not installed") from exc
 
     converter = None
     if args.traditional:
@@ -163,26 +163,33 @@ def main():
     model = WhisperModel(
         str(model_dir), device=args.device, compute_type=args.compute_type
     )
-    language = None if args.language in (None, "auto") else args.language
     aligner = None
-    alignment_attempted=0
-    alignment_succeeded=0
-    alignment_boundary_deltas=[]
     if args.aligner_dir is not None:
         from tools.qwen_forced_alignment import QwenCPUAligner
         aligner=QwenCPUAligner(args.aligner_dir)
+    return model, converter, aligner
+
+
+def transcribe_audio(args, model, converter=None, aligner=None):
+    """Run one recording with reusable models and per-recording state."""
+    if not args.audio.is_file():
+        raise DeliveryBlocked(f"Audio file not found: {args.audio}")
+    target = args.output or args.audio.with_suffix(".srt")
+    if target.suffix.lower() != ".srt" or target.resolve() == args.audio.resolve():
+        raise DeliveryBlocked("A separate .srt output file is required")
+    language = None if args.language in (None, "auto") else args.language
+    alignment = {"attempted": 0, "succeeded": 0, "fallback": 0, "samples": 0}
+    alignment_boundary_deltas = []
     words = []
     detected_languages = []
     # Qwen's documented 5-minute maximum requires at most 240-second
     # speech chunks; don't silently attempt a 600-second alignment.
     effective_chunk=min(args.chunk_seconds or 240,240) if aligner else args.chunk_seconds
     if effective_chunk:
-        from tools.chunking import split_pcm_wav, ChunkingError
-        with tempfile.TemporaryDirectory(prefix="asr_chunks_") as temp_dir:
-            try:
-                parts = split_pcm_wav(args.audio, Path(temp_dir), effective_chunk)
-            except (ChunkingError, OSError, ValueError) as exc:
-                raise SystemExit(f"BLOCKED: chunk preparation failed: {exc}") from exc
+        from tools.chunking import iter_pcm_chunks
+        with tempfile.TemporaryDirectory(prefix="asr_chunks_") as temp_dir, closing(
+            iter_pcm_chunks(args.audio, Path(temp_dir), effective_chunk)
+        ) as parts:
             for part, offset, duration in parts:
                 segments, info = model.transcribe(
                     str(part), language=language, word_timestamps=True,
@@ -199,14 +206,14 @@ def main():
                         local_words.append(SimpleNamespace(
                             word=w.word, start=start, end=end))
                 if aligner and local_words:
-                    alignment_attempted+=1
+                    alignment["attempted"] += 1
                     try:
                         candidate=aligner.align(part,local_words,info.language,duration)
                         from tools.qwen_forced_alignment import alignment_boundary_shifts
                         delta=alignment_boundary_shifts(local_words,candidate)
                         alignment_boundary_deltas.extend(delta)
                         local_words=candidate
-                        alignment_succeeded+=1
+                        alignment["succeeded"] += 1
                     except (ValueError,RuntimeError,KeyError,IndexError,TypeError):
                         # ASR output and aligner must match exactly. Never
                         # silently rewrite text or inject invented timing.
@@ -214,6 +221,7 @@ def main():
                 for w in local_words:
                     words.append(SimpleNamespace(word=w.word,
                                   start=offset+w.start,end=offset+w.end))
+                part.unlink()
     else:
         segments, info = model.transcribe(
             str(args.audio), language=language, word_timestamps=True,
@@ -222,7 +230,7 @@ def main():
         words = [word for seg in segments for word in (seg.words or [])]
         detected_languages = [info.language]
     if not words:
-        raise SystemExit("BLOCKED: No recognized speech; SRT not written")
+        raise DeliveryBlocked("No recognized speech; SRT not written")
 
     if args.segmentation == "smart":
         from tools.smart_segmentation import segment_words
@@ -230,10 +238,11 @@ def main():
                                 args.line_chars, args.max_lines)
     else:
         grouped = group_words(words, args.max_chars, args.max_seconds, args.max_gap)
-    target = args.output or args.audio.with_suffix(".srt")
-    if target.suffix.lower() != ".srt":
-        raise SystemExit("BLOCKED: Output must have the .srt extension")
-    pending = target.with_name(target.stem + ".pending.srt")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(dir=target.parent, suffix=".srt",
+                                     prefix=".srt-pending-", delete=False) as file:
+        pending = Path(file.name)
+    quality = None
     try:
         count = write_srt(
             grouped, pending, not args.keep_punctuation, converter=converter,
@@ -244,33 +253,47 @@ def main():
         report = validate_delivery(args.audio, pending)
         if report["cues"] != count:
             raise DeliveryBlocked("Subtitle count mismatch")
-        pending.replace(target)
-        report = validate_delivery(args.audio, target)
         if args.segmentation == "smart":
             from tools.subtitle_quality import analyze_srt
-            quality=analyze_srt(target,args.line_chars,args.max_lines,args.reading_rate)
-            if not quality["layout_ok"]:
-                print("AUTO_LAYOUT_WARNING: unbreakable ASR token/layout exceeded capacity")
-            print(f"AUTO_QA_CUES={quality['cues']} AUTO_QA_FAST={quality['reading_too_fast']} "
-                  f"AUTO_QA_SHORT={quality['too_brief']} AUTO_QA_MAX_RATE={quality['high_rate']:.2f}")
-    except Exception as exc:
+            quality = analyze_srt(pending, args.line_chars, args.max_lines, args.reading_rate)
+        pending.replace(target)
+        report["output"] = str(target.resolve())
+    finally:
         pending.unlink(missing_ok=True)
+    alignment["fallback"] = alignment["attempted"] - alignment["succeeded"]
+    alignment["samples"] = len(alignment_boundary_deltas)
+    if alignment_boundary_deltas:
+        sorted_shifts = sorted(alignment_boundary_deltas)
+        n = len(sorted_shifts)
+        alignment.update(median=statistics.median(sorted_shifts),
+                         p95=sorted_shifts[(95*n+99)//100-1], max=sorted_shifts[-1])
+    return report, quality, alignment, detected_languages
+
+
+def main():
+    args = parse_args()
+    if not args.audio.is_file():
+        raise SystemExit(f"BLOCKED: Audio file not found: {args.audio}")
+    try:
+        model, converter, aligner = load_transcription_models(args)
+        report, quality, alignment, languages = transcribe_audio(args, model, converter, aligner)
+    except Exception as exc:
         raise SystemExit(f"BLOCKED: no validated new SRT deliverable: {exc}") from exc
-    recognized = ",".join(detected_languages)
-    print(f"OUTPUT_VALIDATED_NOT_YET_DELIVERED: {target}; "
-          f"{report['cues']} cues; detected={recognized}")
+    if quality is not None:
+        if not quality["layout_ok"]:
+            print("AUTO_LAYOUT_WARNING: unbreakable ASR token/layout exceeded capacity")
+        print(f"AUTO_QA_CUES={quality['cues']} AUTO_QA_FAST={quality['reading_too_fast']} "
+              f"AUTO_QA_SHORT={quality['too_brief']} AUTO_QA_MAX_RATE={quality['high_rate']:.2f}")
+    print(f"OUTPUT_VALIDATED_NOT_YET_DELIVERED: {report['output']}; "
+          f"{report['cues']} cues; detected={','.join(languages)}")
     if aligner:
-        print(f"ALIGNER_ATTEMPTED_CHUNKS={alignment_attempted} ALIGNER_SUCCEEDED_CHUNKS={alignment_succeeded}")
-        print("ALIGNER_FALLBACK_CHUNKS="+str(alignment_attempted-alignment_succeeded))
-        print("ALIGNER_BOUNDARY_COMPARISON_SAMPLES="+str(len(alignment_boundary_deltas)))
-        if alignment_boundary_deltas:
-            sorted_shifts=sorted(alignment_boundary_deltas)
-            n=len(sorted_shifts)
-            p95=sorted_shifts[max(0,(95*n+99)//100-1)]
-            print("ALIGNER_BOUNDARY_MEDIAN_ABS_SHIFT_SECONDS=" +
-                  f"{statistics.median(sorted_shifts):.3f}")
-            print("ALIGNER_BOUNDARY_P95_ABS_SHIFT_SECONDS="+f"{p95:.3f}")
-            print("ALIGNER_BOUNDARY_MAX_ABS_SHIFT_SECONDS="+f"{sorted_shifts[-1]:.3f}")
+        print(f"ALIGNER_ATTEMPTED_CHUNKS={alignment['attempted']} "
+              f"ALIGNER_SUCCEEDED_CHUNKS={alignment['succeeded']}")
+        print(f"ALIGNER_FALLBACK_CHUNKS={alignment['fallback']}")
+        print(f"ALIGNER_BOUNDARY_COMPARISON_SAMPLES={alignment['samples']}")
+        if alignment["samples"]:
+            for name in ("median", "p95", "max"):
+                print(f"ALIGNER_BOUNDARY_{name.upper()}_ABS_SHIFT_SECONDS={alignment[name]:.3f}")
         else:
             print("ALIGNER_NO_ACCEPTED_ALIGNMENT: preserve Whisper times")
     print("OFFLINE: no inference service/API quota was used.")
